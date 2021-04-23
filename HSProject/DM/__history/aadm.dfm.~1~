@@ -1,0 +1,88 @@
+object dm: Tdm
+  OldCreateOrder = False
+  OnCreate = DataModuleCreate
+  Left = 417
+  Top = 231
+  Height = 254
+  Width = 569
+  object cripto: TLbBlowfish
+    CipherMode = cmECB
+    Left = 210
+    Top = 9
+  end
+  object dbRemoto: TSQLConnection
+    ConnectionName = 'Devart InterBase'
+    DriverName = 'DevartInterBase'
+    LoginPrompt = False
+    Params.Strings = (
+      'DriverName=DevartInterBase'
+      'DataBase=c:\adv\bancos\popular.gd'
+      'RoleName='
+      'User_Name=sysdba'
+      'Password=vdas1606'
+      'SQLDialect=3'
+      'BlobSize=-1'
+      'ErrorResourceFile='
+      'LocaleCode=0000'
+      'DevartInterBase TransIsolation=ReadCommitted'
+      'WaitOnLocks=True'
+      'Charset='
+      'CharLength=1'
+      'EnableBCD=True'
+      'OptimizedNumerics=True'
+      'LongStrings=True'
+      'UseQuoteChar=False'
+      'UseUnicode=True'
+      'FetchAll=False'
+      'DeferredBlobRead=False'
+      'DeferredArrayRead=False')
+    Left = 112
+    Top = 16
+  end
+  object dbxDB: TSQLConnection
+    ConnectionName = 'Devart InterBase'
+    DriverName = 'DevartInterBase'
+    LoginPrompt = False
+    Params.Strings = (
+      'DriverName=DevartInterBase'
+      'DataBase=C:\DadosEstaxvelTeste.GD'
+      'RoleName='
+      'User_Name=SYSDBA'
+      'Password=masterkey'
+      'SQLDialect=3'
+      'BlobSize=-1'
+      'ErrorResourceFile='
+      'LocaleCode=0000'
+      'DevartInterBase TransIsolation=ReadCommitted'
+      'WaitOnLocks=True'
+      'Charset='
+      'CharLength=1'
+      'EnableBCD=True'
+      'OptimizedNumerics=True'
+      'LongStrings=True'
+      'UseQuoteChar=False'
+      'UseUnicode=fALSE'
+      'FetchAll=False'
+      'DeferredBlobRead=False'
+      'DeferredArrayRead=False')
+    Left = 34
+    Top = 14
+  end
+  object dbRemotoSnap: TSQLConnection
+    ConnectionName = 'DataSnapCONNECTION'
+    DriverName = 'DataSnap'
+    LoginPrompt = False
+    Params.Strings = (
+      'DriverName=DataSnap'
+      'HostName=advnuvem.cloudapp.net'
+      'port=211')
+    Left = 410
+    Top = 21
+  end
+  object dspRemotoSnap: TDSProviderConnection
+    ServerClassName = 'tdmRecebeCons'
+    SQLConnection = dbRemotoSnap
+    Left = 310
+    Top = 9
+  end
+end

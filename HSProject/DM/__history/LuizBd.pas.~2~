@@ -1,0 +1,3292 @@
+{ ****************************************************************************** }
+{ * Unit advLib --> biblioteca de funções para banco de dados da ADV           * }
+{ * Criação:        16/11/2005                                                 * }
+{ * ultima alt:     18/07/2007
+  Autor: Vitor Luiz rubio                                                    * }
+{ *                                                                            * }
+{ ****************************************************************************** }
+
+unit LuizBd;
+
+interface
+
+uses db,
+  Datasnap.DSConnect,
+  dbclient,
+  classes,
+  variants,
+  sysutils,
+  advlib,
+  windows,
+  dateutils,
+  dbTables,
+  Contnrs,
+  AdvLogEventoLib,
+  dialogs,
+  DBGrids,
+  Graphics,
+  ComCtrls,
+  Forms,
+  ibdatabase,
+  ADVSQLLib,
+  IBStoredProc,
+  TypInfo,
+  IBCustomDataSet,
+  IBSQL,
+  IBScript,
+  Provider,
+  FMTBcd,
+  SqlExpr,
+  funcoes,
+  advstrings,
+  clipbrd,
+  iniFiles,
+  LbCipher, LbClass,
+  advtexto, OverbyteIcsWndControl, OverbyteIcsHttpProt,
+  FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error, FireDAC.UI.Intf,
+  FireDAC.Phys.Intf, FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async,
+  FireDAC.Phys, FireDAC.Phys.MySQL, FireDAC.Comp.Client, FireDAC.Stan.Param,
+  FireDAC.DatS, FireDAC.DApt.Intf, FireDAC.DApt, FireDAC.Comp.DataSet,
+  FireDAC.VCLUI.Wait, FireDAC.Comp.UI;
+
+type
+  // classe que associa um campo a um valor, para ser passada como parametro
+  // para  uma procedure que deve gravar n determinados valores em m determinados
+  // campos
+
+  // Tipo Para designar o Banco de dados
+  TBaseDados = (bdFIREBIRD, bdSQLSERVER, bdORACLE);
+
+  TcampoValor = class(Tobject)
+  public
+    campo: string;
+    valor: variant;
+    constructor create(acampo: string; avalor: variant); overload; dynamic;
+    constructor create; overload; dynamic;
+  end;
+
+  TAssociaCampo = class(Tobject)
+  public
+    campoOri: string;
+    CampoDes: string;
+    constructor create(acampoOri, AcampoDes: string); overload; dynamic;
+    constructor create; overload; dynamic;
+  end;
+
+  TCampoTamanho = class(Tobject)
+  public
+    campo: string;
+    Tamanho: Integer;
+    constructor create(acampo: string; atamanho: Integer); overload; dynamic;
+    constructor create; overload; dynamic;
+  end;
+
+  TAssociaCampoList = class(tobjectlist)
+  protected
+    function GetItem(Index: Integer): TAssociaCampo;
+    procedure SetItem(Index: Integer; avalor: TAssociaCampo);
+  public
+    constructor create;
+    function Add(avalor: TAssociaCampo): Integer;
+    function Remove(avalor: TAssociaCampo): Integer;
+    function IndexOf(avalor: TAssociaCampo): Integer;
+    function FindInstanceOf(AClass: TClass; AExact: Boolean = True; AStartAt: Integer = 0): Integer;
+    procedure Insert(Index: Integer; avalor: TAssociaCampo);
+    property Items[Index: Integer]: TAssociaCampo read GetItem write SetItem; default;
+  end;
+
+  TCopiaInteligente = (cpiTiraDuplicidade, cpiMantemIntegridade, cpiIgnora);
+
+  TExportaInserts = class(Tobject)
+  protected
+    FDataSet: TDataSet;
+    FNomeTabela: string;
+    FListaCampos: TStrings;
+    FProgressbar: TprogressBar;
+    FFileName: string;
+  public
+    procedure Dump;
+    property DataSet: TDataSet read FDataSet write FDataSet;
+    property ListaCampos: TStrings read FListaCampos write FListaCampos;
+    property NomeTabela: string read FNomeTabela write FNomeTabela;
+    property Progressbar: TprogressBar read FProgressbar write FProgressbar;
+    property FileName: string read FFileName write FFileName;
+  end;
+
+  TExportaUpdate = class(Tobject)
+  protected
+    FDataSet: TDataSet;
+    FNomeTabela: string;
+    FListaComparcao: TStrings;
+    FListaUpdate: TStrings;
+    FProgressbar: TprogressBar;
+    FFileName: string;
+  public
+    procedure Dump;
+    property DataSet: TDataSet read FDataSet write FDataSet;
+    property ListaComparacao: TStrings read FListaComparcao write FListaComparcao;
+    property ListaUpdate: TStrings read FListaUpdate write FListaUpdate;
+    property NomeTabela: string read FNomeTabela write FNomeTabela;
+    property Progressbar: TprogressBar read FProgressbar write FProgressbar;
+    property FileName: string read FFileName write FFileName;
+  end;
+
+  TEventHandlers = class(Tobject)
+  class var
+    select: string;
+    class property comando: String read select write select;
+    class procedure cdsGeralBeforeGetRecords(Sender: Tobject; var OwnerData: OleVariant);
+  end;
+
+  // ******************************************************************************
+  // *****************************Funções Diversas***************************************
+  // ******************************************************************************
+
+function CampoNulo(fonte: Tfield): Boolean; // mesma coisa que campo acima, mas verifica um só
+function CampoNuloOuBranco(fonte: Tfield): Boolean;
+
+function BuscacnpjSefaz(cnpj: string): string;
+
+function CampoExiste(nomeCampo: string; DataSet: TDataSet): Boolean; // verifica existencia de um campo num dataset
+procedure CopiaRegistro(dsOrigem, dsDestino: TClientDataset); // copia apenas um registro de um dataset
+function TemCampoNulo(fonte: array of Tfield): Boolean; // verifica campos nulos dentro de um array
+function CopiaRegistroInteligente(cdsOrigem, cdsDestino: TClientDataset; acampo: string; aLista: TstringList;
+  tipocopia: TCopiaInteligente): Boolean;
+// copia o registro armazenando um código numa lista, pra não deixar repetir
+function SeNaoExisteCadastra(tabOndeProc: TClientDataset; CampoProcura, aChavePrimaria: string; sProcura: variant)
+  : variant; overload;
+function SeNaoExisteCadastra(tabOndeProc: TClientDataset; CampoProcura, CampoVolta: string; sProcura: variant;
+  campovalor: array of TcampoValor): variant; overload;
+// retorna o campo esperado procurando por algum outro, se não existe, acrescenta
+procedure ConcatCampos(cdsFonte, cdsDestino: TClientDataset; fontes: array of string; destino: string;
+  Separador: string = ''; bNomeCampo: Boolean = false);
+// concatena varios campos da origem num único campo destino
+procedure SetaCampoValor(valor: array of TcampoValor; cdsDestino: TClientDataset);
+// atribui valores determinados a campos determinados, num array
+procedure SetaCampoCampo(valor: array of TAssociaCampo; cdsFonte, cdsDestino: TClientDataset);
+// associa um campo de um cds com um campo de outrocds
+function NumeroUnicoInt64: int64;
+function NumeroUnico: Integer;
+function ProcuraRetorna(TabProcura: TClientDataset; CampoProcura, CampoRetorna: string; sProcura: variant): variant;
+procedure AssociaTabelaArquivo(tabela: ttable; arquivo: string);
+// function ConsultaQuery(query: Tquery; ssql, nomecampo: string): variant; overload;
+function ConsultaQuery(query: Tquery; ssql, nomeCampo: string): string;
+function RegistroExiste(cds: TClientDataset; acampo, avalor: string): Boolean; overload;
+function RegistroExiste(aLista: TstringList; avalor: string): Boolean; overload;
+
+function LocalizaFiltra(ADataSet: TClientDataset; CampoProcura, FiltroProcura: string): Boolean;
+procedure OrdenaColuna(Column: TColumn); // ordena as colunas de um dbgrid ligado a um cds
+procedure DumpToInserts(ADataSet: TDataSet; aNomeTabela: string; aCampos: TStrings; aarquivo: string);
+procedure DumpToUpdates(ADataSet: TDataSet; aNomeTabela: string; aCamposCompara, aCamposUpdate: TStrings;
+  aarquivo: string);
+
+function ibTabelaExiste(ibBanco: TibdataBase; sNomeTab: string): Boolean; // verifica se existe uma tabela num banco
+
+function FormataSaidaSQL(acampo: Tfield): string;
+// retorna o conteudo de um campo no formato de uma string que possa ser colocada num comando SQL, formatada
+
+// função para execução de StoredProcedure
+function ExecutaSproc(banco: TibdataBase; transa: TIBTransaction; nomeproc: string; datapar: array of TDateTime;
+  intpar: array of Integer): Boolean;
+
+function ExecutaSproc_DBX(banco: TSQLConnection; nomeproc: string; datapar: array of TDateTime;
+  intpar: array of Integer; dataparname: array of string; intparname: array of string): Boolean;
+
+// função para criar um dataset
+function CriaDS(banco: TibdataBase; transa: TIBTransaction; comandoSelec: string): TIBDataSet;
+
+// função para criar um dataset DBX
+function CriaDS_DBX(banco: TSQLConnection; comandoSelec: string): TSQLDataSet;
+
+// função para criar um dataset firedac
+function CriaDS_Fdac(banco: TFDConnection; comandoSelec: string): TFDQuery;
+
+// retorna o valor do primeiro registro e do primeiro campo do select
+function ValorCampo_Fdac(banco: TFDConnection; comandoSelec: string; coalesce: variant): variant;
+function ValorCampo_Dbx(banco: TSQLConnection; comandoSelec: string; coalesce: variant): variant;
+function ValorCampo_DbxSnap(banco: TDSProviderConnection; comandoSelec: string; coalesce: variant; provider: string = ''): variant;
+function ValorCampo(banco: TibdataBase; transa: TIBTransaction; comandoSelec: string; coalesce: variant): variant;
+
+// função que cria um dataset DBX  mas retorna sem abrir para poder parametrizar
+function CriaDSPARAM_DBX(banco: TSQLConnection; comandoSelec: string): TSQLDataSet;
+function CriaDSPARAM_Fdac(banco: TFDConnection; comandoSelec: string): TFDQuery;
+function CriaComPARAM_Fdac(banco: TFDConnection; comandoSelec: string): TFDCommand;
+
+// função para criar um clientdataset DBX
+function CriaCDS_dbx(banco: TSQLConnection; comandoSelec: string): TClientDataset;
+function CriaCDS_dbxSnap(banco: TDSProviderConnection; comandoSelec: string; provider: string = ''): TClientDataset;
+
+// função para excutar comando simples no banco
+function ExecSQLSimples(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+function ExecSQLScript(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+function ExisteRegistro(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+function ExecSQLLongo(banco: TibdataBase; transa: TIBTransaction; comandoLongo: TStrings): Boolean;
+
+procedure ClonaDataSet(aOrigem: TDataSet; aDestino: TClientDataset);
+procedure preparaDataset(DataSet: TIBDataSet; select: string);
+
+procedure CopiaDataSet(origem: TIBDataSet; destino: TClientDataset);
+procedure PreparaInsercao(DataSet: TIBDataSet; cds: TClientDataset; select: string);
+procedure SincronizaTabela(bancoOri: TibdataBase; transaOri: TIBTransaction; bancoDest: TibdataBase;
+  transaDest: TIBTransaction; nomeTab: string; chaveTab: string; Clear: Boolean);
+
+procedure PovoaTabelaRand(banco: TibdataBase; transa: TIBTransaction; nomeTab: string; qtdeReg: Integer; chave: string);
+
+function ComparaDScomStringList(banco: TibdataBase; transa: TIBTransaction; select: string;
+  esperado: TstringList): Boolean;
+
+function ComparaDScomStringList_dbx(banco: TSQLConnection; select: string; esperado: TstringList): Boolean;
+
+// verifica se um campo do client tah vazio e mostra mensagem que deve ser preenchido
+function campovazio(campo: array of Tfield; mostramensagem: Boolean = True): Boolean;
+
+// SETA OS CAMPOS DE UM CLIENT COMO READONLY
+procedure setaCDSReadOnly(cds: TClientDataset; readonly: Boolean);
+
+// Define as flags para gravar...
+procedure setaFlagConsultaMultipla(strTabela: string; cdsPadrao: TClientDataset; dsePadrao: TSQLDataSet;
+  dp: TDataSetProvider; banco: TSQLConnection; cKey1: string; cKey2: string; cKey3: string);
+
+procedure setapropriedadesSQLSERVER(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+
+procedure setapropriedadesFireBird(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+
+procedure setapropriedadesFireCrLabs(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+
+procedure setapropriedadesFireCrLabsJP(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+
+procedure setapropriedadesMySqlCrLabs(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string; usu: string = 'root');
+
+procedure setapropriedadesMySqlCrLabsJP(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string; usu: string = 'root');
+
+function ExecSQLSimples_DBX(banco: TSQLConnection; comandoSimples: string): Boolean;
+
+function ExecSQLSimples_fdac(banco: TFDConnection; comandoSimples: string): Boolean;
+
+function ExisteRegistro_DBX(banco: TSQLConnection; comandoSimples: string): Boolean;
+function ExisteRegistro_DBXSnap(banco: TDSProviderConnection; comandoSimples: string): Boolean;
+
+function ExisteRegistro_fdac(banco: TFDConnection; comandoSimples: string): Boolean;
+
+procedure SincronizaTabela_DBX(bancoOri: TSQLConnection; bancoDest: TSQLConnection; nomeTab: string; chaveTab: string;
+  Clear: Boolean);
+
+procedure SincronizaTabela_FB_DBX(bancoOri: TibdataBase; transaOri: TIBTransaction; bancoDest: TSQLConnection;
+  nomeTab: string; chaveTab: string; Clear: Boolean);
+
+procedure SincronizaDados_DBX(bancoOri: TSQLConnection; ComandoOri: string; bancoDest: TSQLConnection;
+  nomeTabDest: string; Clear: Boolean);
+
+// Prepara um comando para os diferentes tipos de SGDB
+function PreparaComando(strComando: string; tipoBanco: TBaseDados): string;
+
+function TemErroDadosSQL(banco: TSQLConnection; comandoSimples: string): Boolean;
+
+function PegaParamSelect(select: string): string;
+
+function PegaDataSourceDFM(comp: string): string;
+
+procedure SomeComCampo(cds: TClientDataset; campo: array of string);
+
+function ComparaDadosDuasBASE(bancoOrigem, bancoDestino: TSQLConnection; select: string): Boolean;
+
+function ExecSQLMultiplos_DBX(banco: TSQLConnection; comandoMultiplo: TStrings): Boolean;
+
+function ConectaBancoBConf(banco: TSQLConnection; pathExe: string): Boolean;
+
+procedure LogUsoREl(CodRel: string; codcliADv, codUsuUtiliza: Integer; banco: TSQLConnection);
+
+procedure LogUsoWorkFlow(CodRel: string; codcliADv, codUsuUtiliza: Integer; banco: TSQLConnection);
+
+function RetornaChaveMestre(banco: TSQLConnection; nomeGenerator: string): Integer;
+
+function pegaCodCliADV(pathINI: string): Integer;
+
+function pegaCODOS(banco: TSQLConnection): Integer;
+
+// cria um stringlist a partir de um campo de um client
+function CriaStringListdoClient(cds: TClientDataset; field: string): TstringList;
+/// ///////////////////
+
+function LeBusinessConfIni(var vpHost: string; var vpBanco: string; var vpSenha: string; var isSQLServer: Boolean;
+  var vpCep: string): Boolean;
+
+function LeBdDeseIni(var vpHost: string; var vpBanco: string; var vpSenha: string): Boolean;
+
+function LeDadosremotoWeb(var vpHost: string; var vpBanco: string; var vpSenha: string): Boolean;
+function getAvisoWebAdv: string;
+
+function ConectaBancoDBX(var banco: TSQLConnection): Boolean;
+function ConectaBancoIB(var banco: TIBDatabase; var transaction: TIBTransaction; cripto: TLbBlowfish): Boolean;
+
+function ConectaBancoFiredac(var banco: TFDConnection): Boolean;
+
+function ConectaCepDBX(var banco: TSQLConnection): Boolean;
+function CriaDbxDB: TSQLConnection; // CRIA UM SQLCONECTION CONECTADO DE ACORDO COM O INI
+
+function RetornaChaveMestreIb(banco: TibdataBase; trans: TIBTransaction; nomeGenerator: string): Integer;
+
+procedure ExportaComandoCSV(banco: TSQLConnection; nomeARQ: string; comando: string);
+
+function isRelOk(CodRel: Integer; banco: TSQLConnection; validaOrdem: Boolean): string;
+
+function isComandoOK(banco: TSQLConnection; comandoSimples: string): Boolean;
+
+procedure setapropriedadesFireDacfirebird(dbxDB: TFDConnection; pHost, pBanco, pSenha: string);  //  Essa parece não funcionar
+
+procedure setapropriedadesFireDac(dbxDB: TFDConnection; pHost, pBanco, pSenha: string);  // criada em 19/06/17
+
+function ConectaBdRemoto_new(banco: TSQLConnection): Boolean;
+
+function temIniBdRemoto: Boolean;
+function isInAdvNet: Boolean;
+function isUsingSourceCode: Boolean;
+
+function tratacomandomysql(cmd: string; bd: TSQLConnection): string;
+function isUsandoMysql(banco: TSQLConnection): Boolean;
+function tratatabelasql(banco: TSQLConnection): string;
+
+implementation
+
+// ******************************************************************************
+// *****************************CampoValor***************************************
+// ******************************************************************************
+
+constructor TcampoValor.create(acampo: string; avalor: variant);
+begin
+  inherited create;
+  self.campo := acampo;
+  self.valor := avalor;
+end;
+
+function tratacomandomysql(cmd: string; bd: TSQLConnection): string;
+var
+  cmdmysql, staux: string;
+  inibd: tinifile;
+begin
+  if not isUsandoMysql(bd) then
+  begin
+    result := cmd;
+    exit;
+  end;
+
+  inibd := tinifile.create(ExtractFilePath(Application.ExeName) + 'businessconf.ini');
+
+  cmdmysql := cmd;
+
+  if (pos('GEN_ID', UpperCase(cmd)) > 0) then
+  begin
+    staux := TextoDelimitado(UpperCase(cmd), 'GEN_ID(', ',');
+    cmdmysql := TrocaStri(UpperCase(cmd), staux, QuotedStr(staux));
+
+  end;
+
+  if (pos('VARCHAR(', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'VARCHAR(', 'CHAR(');
+
+  end;
+
+  if (pos('SUBSTRING( CAST(', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStri(UpperCase(cmdmysql), 'SUBSTRING( CAST(', '');
+
+  end;
+
+  if (pos('COALESCE(CAST(', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'COALESCE(CAST(', 'COALESCE(');
+
+  end;
+
+  if (pos('SUBSTRING(', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'SUBSTRING(', '');
+
+  end;
+
+  if (pos('FROM 1 FOR 200)', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'FROM 1 FOR 200)', '');
+
+  end;
+
+  if (pos('FROM 1 FOR 250)', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'FROM 1 FOR 250)', '');
+
+  end;
+
+  if (pos('FROM 1 FOR 2500)', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'FROM 1 FOR 2500)', '');
+
+  end;
+
+  if (pos('FROM 1 FOR 14)', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'FROM 1 FOR 14)', '');
+
+  end;
+
+  if (pos('AS VARCHAR(200))', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'AS VARCHAR(200))', '');
+
+  end;
+
+  if (pos('AS VARCHAR(2500))', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'AS VARCHAR(2500))', '');
+
+  end;
+
+  if (pos('AS CHAR(2500))', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'AS CHAR(2500))', '');
+
+  end;
+
+  if (pos('SUM (', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'SUM (', 'SUM(');
+
+  end;
+
+  if (pos('AS BLOB SUB_TYPE 1)', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'AS BLOB SUB_TYPE 1)', '');
+
+  end;
+
+  if (((pos('AS DOUBLE PRECISION)', UpperCase(cmdmysql)) > 0) and (pos('CAST(', UpperCase(cmdmysql)) > 0))) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'AS DOUBLE PRECISION)', '');
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'CAST(', '');
+
+    // ShowMessage(cmdmysql);
+  end;
+
+  if (pos('IIF(', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(cmdmysql, 'iif(' + TextoDelimitado(cmdmysql, 'iif(', ')') + ')', '(case when f.revcons = 1 then ' + QuotedStr('Revenda') + ' else ' + QuotedStr('Consumo') + ' end)');
+
+  end;
+
+  if (pos('CONTAINING', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'CONTAINING', 'LIKE');
+
+  end;
+
+  if (pos('STARTING', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'STARTING', 'LIKE');
+
+  end;
+
+  if (pos('ROWS', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'ROWS', 'LIMIT');
+    cmdmysql := TrocaStr(UpperCase(cmdmysql), 'TO ', ',');
+
+  end;
+
+  if (pos('SQL', UpperCase(cmdmysql)) > 0) then
+  begin
+    cmdmysql := TrocaStri(UpperCase(cmdmysql), 'SQL', trim(inibd.ReadString('dados', 'caminho', '')) + '.SQL');
+  end;
+
+  // Troca "" por ''
+  cmdmysql := TrocaStr(cmdmysql, chr(34), chr(39));
+
+  inibd.Free;
+  result := cmdmysql;
+  // showmessage(cmdmysql);
+end;
+
+function isUsandoMysql(banco: TSQLConnection): Boolean;
+begin
+  if (pos('MYSQL', UpperCase(banco.ConnectionName)) > 0) then
+    result := True
+  else
+    result := false;
+
+end;
+
+function tratatabelasql(banco: TSQLConnection): string;
+begin
+  if not isUsandoMysql(banco) then
+  begin
+    result := ' SQL';
+    exit;
+  end;
+
+  result := 'SQL';
+
+end;
+
+constructor TcampoValor.create;
+begin
+  inherited create;
+end;
+
+// ******************************************************************************
+// *****************************CampoValor***************************************
+// ******************************************************************************
+
+// ******************************************************************************
+// *****************************AssociaCampo***************************************
+// ******************************************************************************
+
+// objeto associacampo
+
+constructor TAssociaCampo.create(acampoOri, AcampoDes: string);
+begin
+  inherited create;
+  self.campoOri := acampoOri;
+  self.CampoDes := AcampoDes;
+end;
+
+constructor TAssociaCampo.create;
+begin
+  inherited create;
+end;
+
+// objeto associacampolist
+
+constructor TAssociaCampoList.create;
+begin
+{$IFDEF VER140}
+  inherited create(True);
+{$ELSE}
+{$IFDEF VER130}
+  inherited create(True);
+{$ELSE}
+  inherited create;
+{$ENDIF}
+{$ENDIF}
+end;
+
+function TAssociaCampoList.GetItem(Index: Integer): TAssociaCampo;
+begin
+  result := inherited Items[Index] as TAssociaCampo;
+end;
+
+procedure TAssociaCampoList.SetItem(Index: Integer; avalor: TAssociaCampo);
+begin
+  inherited Items[Index] := avalor;
+end;
+
+function TAssociaCampoList.Add(avalor: TAssociaCampo): Integer;
+begin
+  result := inherited Add(avalor);
+end;
+
+function TAssociaCampoList.Remove(avalor: TAssociaCampo): Integer;
+begin
+  result := inherited Remove(avalor);
+end;
+
+function TAssociaCampoList.IndexOf(avalor: TAssociaCampo): Integer;
+begin
+  result := inherited IndexOf(avalor);
+end;
+
+function TAssociaCampoList.FindInstanceOf(AClass: TClass; AExact: Boolean; AStartAt: Integer): Integer;
+var
+  I: Integer;
+begin
+  result := -1;
+  for I := AStartAt to Count - 1 do
+    if (AExact and (Items[I].ClassType = AClass)) or (not AExact and Items[I].InheritsFrom(AClass)) then
+    begin
+      result := I;
+      break;
+    end;
+end;
+
+procedure TAssociaCampoList.Insert(Index: Integer; avalor: TAssociaCampo);
+begin
+  inherited Insert(Index, avalor);
+end;
+
+// ******************************************************************************
+// *****************************AssociaCampo***************************************
+// ******************************************************************************
+
+// ******************************************************************************
+// *****************************CampoTamanho***************************************
+// ******************************************************************************
+
+constructor TCampoTamanho.create(acampo: string; atamanho: Integer);
+begin
+  inherited create;
+  self.campo := acampo;
+  self.Tamanho := atamanho;
+end;
+
+constructor TCampoTamanho.create;
+begin
+  inherited create;
+end;
+
+// ******************************************************************************
+// *****************************CampoTamanho***************************************
+// ******************************************************************************
+
+// ******************************************************************************
+// *****************************Funções Diversas***************************************
+// ******************************************************************************
+
+function TemCampoNulo(fonte: array of Tfield): Boolean;
+var
+  I: Integer;
+begin
+  result := false;
+  for I := low(fonte) to high(fonte) do
+    if fonte[I].Value = null then
+      result := True;
+end;
+
+function CampoExiste(nomeCampo: string; DataSet: TDataSet): Boolean;
+var
+  lst: TstringList;
+  indice: Integer;
+begin
+  lst := TstringList.create;
+  try
+    DataSet.GetFieldNames(lst);
+    lst.Sort;
+    result := lst.Find(nomeCampo, indice);
+  except
+    result := false;
+  end;
+  lst.Free;
+end;
+
+function CampoNulo(fonte: Tfield): Boolean;
+begin
+  result := (fonte.Value = null);
+end;
+
+function CampoNuloOuBranco(fonte: Tfield): Boolean;
+begin
+  result := ((fonte.Value = null) or (trim(fonte.AsString) = ''));
+end;
+
+procedure CopiaRegistro(dsOrigem, dsDestino: TClientDataset);
+var
+  I: Integer;
+begin
+
+  for I := 0 to dsOrigem.FieldCount - 1 do
+  begin
+    if CampoExiste(dsOrigem.Fields[I].FieldName, dsDestino) then
+      if not CampoNulo(dsOrigem.Fields[I]) then
+        dsDestino.FieldByName(dsOrigem.Fields[I].FieldName).Value := dsOrigem.Fields[I].Value;
+  end;
+end;
+
+procedure ConcatCampos(cdsFonte, cdsDestino: TClientDataset; fontes: array of string; destino: string;
+  Separador: string = ''; bNomeCampo: Boolean = false);
+var
+  I: Integer;
+  sTmp: string;
+begin
+  if not((cdsDestino.State in [dsinsert, dsedit]) and (CampoExiste(destino, cdsDestino))) then
+  begin
+    gravalogerrotexto(cdsDestino, 'Tabela não esta em modo de edição ou campo destino não existe: ' + destino, false);
+    exit;
+  end;
+
+  sTmp := '';
+  for I := low(fontes) to high(fontes) do
+    if CampoExiste(fontes[I], cdsFonte) then
+      if bNomeCampo then
+        sTmp := sTmp + fontes[I] + ': ' + cdsFonte.FieldByName(fontes[I]).AsString + Separador
+      else
+        sTmp := sTmp + cdsFonte.FieldByName(fontes[I]).AsString + Separador;
+
+  cdsDestino.FieldByName(destino).AsString := trim(sTmp);
+
+end;
+
+procedure SetaCampoValor(valor: array of TcampoValor; cdsDestino: TClientDataset);
+var
+  I: Integer;
+begin
+  if not(cdsDestino.State in [dsinsert, dsedit]) then
+  begin
+    gravalogerrotexto(cdsDestino, 'SetaCampoValor:' + #13#10 + 'Tabela não esta em modo de edição!', false);
+
+    // liberar o array de objetos
+    for I := low(valor) to high(valor) do
+      valor[I].Free;
+
+    exit;
+  end;
+
+  for I := low(valor) to high(valor) do
+  begin
+    if CampoExiste(valor[I].campo, cdsDestino) then
+    begin
+
+      case cdsDestino.FieldByName(valor[I].campo).DataType of
+        ftString:
+          cdsDestino.FieldByName(valor[I].campo).AsString := trim(VarToStr(valor[I].valor));
+      else
+        cdsDestino.FieldByName(valor[I].campo).Value := valor[I].valor;
+      end; // case
+      // showmessage(vartostr(valor[i].valor));
+    end
+    else
+      gravalogerrotexto(cdsDestino, 'Campo ' + valor[I].campo + ' não existe!', false);
+    valor[I].Free;
+  end;
+
+end;
+
+procedure PreparaInsercao(DataSet: TIBDataSet; cds: TClientDataset; select: string);
+begin
+  //
+  cds.Close;
+  DataSet.Close;
+  DataSet.SelectSQL.Text := select;
+  DataSet.Open;
+  cds.Open;
+  cds.Insert;
+end;
+
+procedure CopiaDataSet(origem: TIBDataSet; destino: TClientDataset);
+var
+  I: Integer;
+begin
+  //
+  origem.First;
+  while not origem.Eof do
+  begin
+    destino.Insert;
+    for I := 0 to (origem.FieldCount - 1) do
+      destino.Fields[I].AsString := origem.FieldByName(destino.Fields[I].FieldName).AsString;
+    destino.Post;
+    origem.Next;
+  end;
+
+end;
+
+procedure SetaCampoCampo(valor: array of TAssociaCampo; cdsFonte, cdsDestino: TClientDataset);
+var
+  I: Integer;
+begin
+  if not(cdsDestino.State in [dsinsert, dsedit]) then
+  begin
+    gravalogerrotexto(cdsDestino, 'Tabela não esta em modo de edição!', True);
+
+    for I := low(valor) to high(valor) do
+      valor[I].Free;
+
+    exit;
+  end;
+
+  for I := low(valor) to high(valor) do
+  begin
+    if (CampoExiste(valor[I].campoOri, cdsFonte)) and (not CampoNuloOuBranco(cdsFonte.FieldByName(valor[I].CampoDes)))
+    then
+    begin
+      if CampoExiste(valor[I].CampoDes, cdsDestino) then
+        cdsDestino.FieldByName(valor[I].CampoDes).Value := cdsFonte.FieldByName(valor[I].campoOri).Value
+      else
+        gravalogerrotexto(cdsDestino, 'Campo ' + valor[I].CampoDes + ' não existe!', True);
+    end;
+    valor[I].Free;
+  end;
+
+end;
+
+function NumeroUnicoInt64: int64;
+// var ano, mes, dia, hora, minuto, segundo, millisegundo: word;
+begin
+  // DecodeDateTime(now, ano, mes, dia, hora, minuto, segundo, millisegundo);
+  randomize;
+  result := MilliSecondOfTheYear(now) - MilliSecondOfTheDay(now) + random(GetTickCount);
+  { strtoint(inttostr(ano)+
+    inttostr(mes)+
+    inttostr(dia)+
+    inttostr(hora)+
+    inttostr(minuto)+
+    inttostr(segundo)+
+    inttostr(GetTickCount)); }
+end;
+
+function ProcuraRetorna(TabProcura: TClientDataset; CampoProcura, CampoRetorna: string; sProcura: variant): variant;
+begin
+  if (sProcura = null) or (string(sProcura) = '') then
+  begin
+    result := null;
+    exit;
+  end;
+
+  if TabProcura.Locate(CampoProcura, sProcura, []) then
+    result := TabProcura.FieldByName(CampoRetorna).Value;
+end;
+
+procedure AssociaTabelaArquivo(tabela: ttable; arquivo: string);
+begin
+  tabela.Close;
+  tabela.TableName := arquivo;
+  tabela.Open;
+end;
+
+{ function ConsultaQuery(query: Tquery; ssql, nomecampo: string): variant;
+  begin
+  query.Close;
+  query.SQL.Text := ssql;
+  query.Open;
+  result := query.fieldbyname(nomecampo).Value;
+  end; }
+
+function ConsultaQuery(query: Tquery; ssql, nomeCampo: string): string;
+begin
+  query.Close;
+  query.SQL.Text := ssql;
+  query.Open;
+  result := query.FieldByName(nomeCampo).AsString;
+end;
+
+function NumeroUnico: Integer;
+begin
+  randomize;
+  result := random(GetTickCount);
+end;
+
+function CopiaRegistroInteligente(cdsOrigem, cdsDestino: TClientDataset; acampo: string; aLista: TstringList;
+  tipocopia: TCopiaInteligente): Boolean;
+var
+  indice: Integer;
+begin
+  case tipocopia of
+    cpiTiraDuplicidade:
+      begin
+        if aLista.Find(cdsOrigem.FieldByName(acampo).AsString, indice) then
+        begin
+          result := false;
+          exit;
+        end;
+        result := True;
+        CopiaRegistro(cdsOrigem, cdsDestino);
+        aLista.Add(cdsOrigem.FieldByName(acampo).AsString);
+      end;
+
+    cpiMantemIntegridade:
+      begin
+        if not(aLista.Find(cdsOrigem.FieldByName(acampo).AsString, indice)) then
+        begin
+          result := false;
+          exit;
+        end;
+        result := True;
+        CopiaRegistro(cdsOrigem, cdsDestino);
+      end;
+
+    cpiIgnora:
+      begin
+        result := True;
+        CopiaRegistro(cdsOrigem, cdsDestino);
+      end;
+  end; // case;
+
+end;
+
+function RegistroExiste(cds: TClientDataset; acampo, avalor: string): Boolean; overload;
+begin
+  result := cds.Locate(acampo, avalor, []);
+end;
+
+function RegistroExiste(aLista: TstringList; avalor: string): Boolean; overload;
+var
+  indice: Integer;
+begin
+  result := aLista.Find(avalor, indice);
+end;
+
+function SeNaoExisteCadastra(tabOndeProc: TClientDataset; CampoProcura, aChavePrimaria: string;
+  sProcura: variant): variant;
+begin
+  if (sProcura = null) or (string(sProcura) = '') then
+  begin
+    result := null;
+    exit;
+  end;
+
+  if tabOndeProc.Locate(CampoProcura, sProcura, []) then
+    result := tabOndeProc.FieldByName(aChavePrimaria).asinteger
+  else
+  begin
+    try
+      if not tabOndeProc.Active then
+        tabOndeProc.Open;
+      tabOndeProc.Insert;
+      tabOndeProc.FieldByName(CampoProcura).Value := sProcura;
+      if CampoExiste(aChavePrimaria, tabOndeProc) then
+        tabOndeProc.FieldByName(aChavePrimaria).asinteger := 0;
+
+      tabOndeProc.Post;
+      if tabOndeProc.ProviderName <> '' then
+        tabOndeProc.ApplyUpdates(0);
+
+      tabOndeProc.Close;
+      tabOndeProc.Open;
+      if tabOndeProc.Locate(CampoProcura, sProcura, []) then
+        result := tabOndeProc.FieldByName(aChavePrimaria).asinteger
+      else
+        result := null;
+    except
+      gravalogerrotexto(nil, string(sProcura) + ' não encontrado em ' + CampoProcura + ' da tabela ' + tabOndeProc.Name,
+        false, 'Erro de Conversao');
+    end;
+  end;
+end;
+
+function SeNaoExisteCadastra(tabOndeProc: TClientDataset; CampoProcura, CampoVolta: string; sProcura: variant;
+  campovalor: array of TcampoValor): variant;
+begin
+  if (sProcura = null) or (string(sProcura) = '') then
+  begin
+    result := null;
+    exit;
+  end;
+
+  if tabOndeProc.Locate(CampoProcura, sProcura, []) then
+    result := tabOndeProc.FieldByName(CampoVolta).Value
+  else
+  begin
+    try
+      if not tabOndeProc.Active then
+        tabOndeProc.Open;
+      tabOndeProc.Insert;
+      tabOndeProc.FieldByName(CampoProcura).Value := sProcura;
+      SetaCampoValor(campovalor, tabOndeProc);
+      tabOndeProc.Post;
+      if tabOndeProc.ProviderName <> '' then
+        tabOndeProc.ApplyUpdates(0);
+      tabOndeProc.Close;
+      tabOndeProc.Open;
+      if tabOndeProc.Locate(CampoProcura, sProcura, []) then
+        result := tabOndeProc.FieldByName(CampoVolta).Value
+      else
+        result := null;
+    except
+      gravalogerrotexto(nil, string(sProcura) + ' não encontrado em ' + CampoProcura + ' da tabela ' + tabOndeProc.Name,
+        false, 'Erro de Conversao');
+    end;
+  end;
+end;
+
+function LocalizaFiltra(ADataSet: TClientDataset; CampoProcura, FiltroProcura: string): Boolean;
+{
+  var
+  TipoCampo: TFieldType;
+  begin
+  TipoCampo := ADataSet.fieldbyname(CampoProcura).DataType;
+
+  ADataSet.Close;
+  ADataSet.Filtered := true; //30/01/2006 //adicionado por integridade e performance
+
+  case TipoCampo of
+  ftSmallint, ftInteger, ftWord, ftFloat, ftCurrency, ftBCD: //tipos numericos
+  ADataSet.Filter := CampoProcura + ' = ' + vartostr(FiltroProcura); //30/01/2006
+  else //tipos strings
+  ADataSet.Filter := CampoProcura + ' = ' + quotedstr(vartostr(FiltroProcura)); //30/01/2006
+  end; //case
+
+  ADataSet.Open;
+
+  result := (ADataSet.RecordCount > 0);
+
+}
+begin
+  result := ADataSet.Locate(CampoProcura, FiltroProcura, [loCaseInsensitive])
+end;
+
+// Ordena um grid ligado a um ClientDataset
+// Ordena pela Coluna qnd clicar no titulo
+// se clicar novamente ele inverte a ordem
+// Mostra o titulo que ta ordenado em vermelho qnd ascendente e marrom qnd descendente
+// PARAMETROS:
+// Column: TColumn  (é a coluna do grid)
+
+procedure OrdenaColuna(Column: TColumn);
+var
+  opc, n: Integer;
+  nome: string; // usado para criar um nome único para o indice
+  auxCds: TClientDataset; // pega da coluna qual o clientdataset vinculado
+  auxGrid: TDBGrid; // pega da coluna qual o grid
+begin
+  // pega qual é o ClientDataset a partir da Coluna
+  auxCds := Column.Grid.DataSource.DataSet as TClientDataset;
+
+  // se estiver clicando em coluna que não é atualmente o indice deve criar um novo como ascendente
+  opc := 1;
+
+  // verifica se já tem algum indice antes de ver se ta clicando novamente no mesmo titulo
+  if auxCds.IndexDefs.Count > 0 then
+    // se estiver clicando no titulo que já tava com a ordem inverte
+    if auxCds.IndexDefs.Items[0].Fields = Column.FieldName then
+      if ixDescending in auxCds.IndexDefs.Items[0].Options then
+        opc := 1 { // pode usar o 0 porque vai ter sempre 1 só }
+      else
+        opc := 2;
+
+  // volta a cor de todos os titulos para preto
+  auxGrid := Column.Grid as TDBGrid;
+  for n := 0 to auxGrid.Columns.Count - 1 do
+    auxGrid.Columns.Items[n].Title.Font.Color := clWindowText;
+
+  // usa try porque se clicar num loockup da erro
+  try
+    auxCds.IndexDefs.Clear; // sempre limpa para manter apenas 1
+    nome := FloatToStr(TimeStampToMSecs(DateTimeToTimeStamp(time())));
+    // qnd tava usando sempre o mesmo nome ele não funcionava (não atualiza o inice) por isso ta sempre criando um nome aqui
+    // cria o indice
+    if opc = 1 then
+      auxCds.IndexDefs.Add(nome, Column.FieldName, [])
+    else
+      auxCds.IndexDefs.Add(nome, Column.FieldName, [ixDescending]);
+    // seta o indice
+    auxCds.IndexName := nome;
+
+    // muda a cor do titulo para avisar qual ordem está
+    Column.Title.Font.Color := iif(opc = 1, clRed, clMaroon);
+  except
+  end;
+
+  { // arranca o simbolo de ordem do titulo que o tem
+    auxUltLetTitulo :=  copy( Column.Title.Caption , length(Column.Title.Caption)-2 , 1);
+    if (  (auxUltLetTitulo = #173) or (auxUltLetTitulo = #66) ) then
+    Column.Title.Caption := copy( Column.Title.Caption , 0 , length(Column.Title.Caption)-3); //menos 2 para tirar o espaço tbm
+    // coloca o simbolo de ordem
+    Column.Title.Caption := Column.Title.Caption + ' ' + iif( opc = 1 , #173 , #175);
+  }
+end;
+
+procedure DumpToInserts(ADataSet: TDataSet; aNomeTabela: string; aCampos: TStrings; aarquivo: string);
+begin
+  with TExportaInserts.create do
+  begin
+    DataSet := ADataSet;
+    NomeTabela := aNomeTabela;
+    ListaCampos := aCampos;
+    FileName := aarquivo;
+    Dump;
+    Free;
+  end;
+end;
+
+procedure DumpToUpdates(ADataSet: TDataSet; aNomeTabela: string; aCamposCompara, aCamposUpdate: TStrings;
+  aarquivo: string);
+begin
+  with TExportaUpdate.create do
+  begin
+    DataSet := ADataSet;
+    NomeTabela := aNomeTabela;
+    ListaUpdate := aCamposUpdate;
+    ListaComparacao := aCamposCompara;
+    FileName := aarquivo;
+    Dump;
+    Free;
+  end;
+end;
+
+function FormataSaidaSQL(acampo: Tfield): string;
+begin
+  case acampo.DataType of
+    ftString, ftBlob, ftMemo, ftWideString:
+      result := QuotedStr(acampo.AsString);
+    ftSmallint, ftInteger, ftFloat, ftLargeint, ftCurrency, ftBCD:
+      result := acampo.AsString;
+    ftTimeStamp:
+      result := QuotedStr(FormatDateTime('MM/DD/YYYY HH:nn:ss', acampo.asdatetime));
+    ftDate, ftDateTime:
+      result := QuotedStr(FormatDateTime('MM/DD/YYYY', acampo.asdatetime));
+    ftTime:
+      result := QuotedStr(FormatDateTime('HH:nn:ss', acampo.asdatetime));
+
+  end; // case
+end;
+
+{ TExportaInserts }
+
+procedure TExportaInserts.Dump;
+var
+  I: Integer;
+  cmdInsert: string;
+  cmdValues: string;
+  campo: Tfield;
+  FlagVirgula: string;
+  aarquivo: TFileStream;
+  aTexto: TstringList;
+  aLinha: string;
+  ListaTemp: TstringList;
+begin
+  if not FDataSet.Active then
+    FDataSet.Open;
+
+  if Assigned(FProgressbar) then
+  begin
+    FProgressbar.Max := FDataSet.RecordCount;
+    FProgressbar.Position := 0;
+  end;
+
+  aTexto := TstringList.create;
+  aarquivo := TFileStream.create(self.FileName, fmCreate);
+
+  aLinha := '';
+
+  FDataSet.First;
+
+  if FListaCampos = nil then
+  begin
+    ListaTemp := TstringList.create;
+    FListaCampos := ListaTemp;
+    FDataSet.GetFieldNames(FListaCampos);
+  end;
+
+  while not FDataSet.Eof do
+  begin
+    cmdInsert := 'Insert into ' + FNomeTabela + '(';
+    cmdValues := 'values (';
+    FlagVirgula := ', ';
+
+    for I := 0 to FListaCampos.Count - 1 do
+    begin
+      if I = FListaCampos.Count - 1 then
+        FlagVirgula := ' '
+      else
+        FlagVirgula := ', ';
+
+      if CampoExiste(FListaCampos.Strings[I], FDataSet) then
+        campo := FDataSet.FieldByName(FListaCampos.Strings[I])
+      else
+      begin
+        Continue;
+      end;
+
+      cmdInsert := cmdInsert + campo.FieldName + FlagVirgula;
+
+      if not(campo.Value = null) then
+        cmdValues := cmdValues + FormataSaidaSQL(campo) + FlagVirgula
+      else
+        cmdValues := cmdValues + 'NULL' + FlagVirgula;
+    end; // for
+
+    cmdValues := cmdValues + ');';
+    cmdInsert := cmdInsert + ') ';
+
+    aLinha := cmdInsert + cmdValues;
+    aTexto.Add(aLinha);
+    aTexto.SaveToStream(aarquivo);
+    aTexto.Clear;
+
+    FDataSet.Next;
+    if Assigned(FProgressbar) then
+      FProgressbar.StepIt;
+    Application.ProcessMessages;
+  end; // while
+
+  // libera a lista de campos da memoria apenas se ja era nula e foi criada uma temporaria
+  if ListaTemp <> nil then
+  begin
+    ListaTemp.Free;
+    ListaTemp := nil;
+    FListaCampos := nil;
+  end;
+  aarquivo.Free;
+  aTexto.Free;
+
+end;
+
+function ibTabelaExiste(ibBanco: TibdataBase; sNomeTab: string): Boolean;
+var
+  slista: TstringList;
+  indice: Integer;
+begin
+  slista := TstringList.create;
+  try
+    if not ibBanco.Connected then
+      ibBanco.Open;
+    ibBanco.GetTableNames(slista, false);
+    slista.Sort;
+    if slista.Find(sNomeTab, indice) then
+      result := True
+    else
+      result := false;
+  except
+    result := false;
+  end;
+end;
+
+{ TExportaUpdate }
+
+procedure TExportaUpdate.Dump;
+var
+  I: Integer; // conta campos
+  j: Integer; // conta comparacoes
+  cmdUpdate: string;
+  cmdWhere: string;
+  CampoAtu: Tfield; // campo que vai ser atualizado
+  CampoFiltra: Tfield; // campo pelo qual vai ser filtrado
+  FlagVirgula: string;
+  aarquivo: TFileStream;
+  aTexto: TstringList;
+  aLinha: string;
+begin
+  if not FDataSet.Active then
+    FDataSet.Open;
+
+  if Assigned(FProgressbar) then
+  begin
+    FProgressbar.Max := FDataSet.RecordCount;
+    FProgressbar.Position := 0;
+  end;
+
+  aTexto := TstringList.create;
+  aarquivo := TFileStream.create(self.FileName, fmCreate);
+
+  aLinha := '';
+  FDataSet.First;
+
+  while not FDataSet.Eof do
+  begin
+    FlagVirgula := ', ';
+    cmdUpdate := 'UPDATE ' + FNomeTabela + ' SET ';
+    for I := 0 to FListaUpdate.Count - 1 do
+    begin
+      if I = FListaUpdate.Count - 1 then
+        FlagVirgula := ' '
+      else
+        FlagVirgula := ', ';
+
+      if not CampoExiste(FListaUpdate.Strings[I], FDataSet) then
+        Continue;
+
+      CampoAtu := FDataSet.FieldByName(FListaUpdate.Strings[I]);
+
+      if not(CampoAtu.Value = null) then
+        cmdUpdate := cmdUpdate + CampoAtu.FieldName + ' = ' + FormataSaidaSQL(CampoAtu) + FlagVirgula
+      else
+        cmdUpdate := cmdUpdate + CampoAtu.FieldName + ' = NULL ' + FlagVirgula;
+
+    end; // for
+
+    with TMontaSelectFiltro.create do
+    begin
+      for j := 0 to FListaComparcao.Count - 1 do
+      begin
+        if not CampoExiste(FListaComparcao.Strings[j], FDataSet) then
+          Continue;
+
+        CampoFiltra := FDataSet.FieldByName(ListaComparacao[j]);
+
+        if not(CampoFiltra.Value = null) then
+          Filtros.Add(ListaComparacao[j] + ' = ' + FormataSaidaSQL(CampoFiltra));
+
+      end; // for
+
+      cmdWhere := PegaFiltroAtual + ';';
+      Free;
+    end;
+
+    aLinha := cmdUpdate + cmdWhere;
+    aTexto.Add(aLinha);
+    aTexto.SaveToStream(aarquivo);
+    aTexto.Clear;
+
+    FDataSet.Next;
+
+    if Assigned(FProgressbar) then
+      FProgressbar.StepIt;
+
+    Application.ProcessMessages;
+
+  end; // while
+
+  aarquivo.Free;
+  aTexto.Free;
+
+end;
+
+procedure ClonaDataSet(aOrigem: TDataSet; aDestino: TClientDataset);
+var
+  I: Integer;
+begin
+  for I := 0 to aOrigem.FieldCount - 1 do
+    aDestino.Fields.Add(aOrigem.Fields[I]);
+
+  aDestino.CreateDataSet;
+  aDestino.Open;
+
+  aOrigem.First;
+  while not aOrigem.Eof do
+  begin
+    aDestino.Insert;
+    for I := 0 to aOrigem.FieldCount - 1 do
+      aDestino.FieldByName(aOrigem.Fields[I].Name).Value := aOrigem.Fields[I].Value;
+    aDestino.Post;
+    aOrigem.Next;
+  end;
+
+end;
+
+function ExecutaSproc(banco: TibdataBase; transa: TIBTransaction; nomeproc: string; datapar: array of TDateTime;
+  intpar: array of Integer): Boolean;
+var
+  ibsp: TIBStoredProc;
+  I, j: Integer;
+begin
+  //
+  ibsp := TIBStoredProc.create(nil);
+  ibsp.Database := banco;
+  ibsp.Transaction := transa;
+  ibsp.StoredProcName := nomeproc;
+  ibsp.Prepare;
+
+  for I := 0 to HIGH(datapar) do
+    ibsp.Params[I].AsDate := datapar[I];
+
+  j := I;
+
+  for I := 0 to HIGH(intpar) do
+    ibsp.Params[I + j].asinteger := intpar[I];
+
+  try
+    ibsp.ExecProc;
+    transa.CommitRetaining;
+    result := True;
+  except
+    result := false;
+  end;
+
+  ibsp.Free;
+end;
+
+function ExecutaSproc_DBX(banco: TSQLConnection; nomeproc: string; datapar: array of TDateTime;
+  intpar: array of Integer; dataparname: array of string; intparname: array of string): Boolean;
+var
+  ibsp: TsqlStoredProc;
+  I, j: Integer;
+begin
+  //
+  ibsp := TsqlStoredProc.create(nil);
+  ibsp.SQLConnection := banco;
+  ibsp.StoredProcName := nomeproc;
+  // IBSP.PrepareStatement;
+
+  for I := 0 to HIGH(datapar) do
+    ibsp.Params.CreateParam(ftDate, dataparname[I], ptInput).AsDate := datapar[I];
+
+  j := I;
+
+  for I := 0 to HIGH(intpar) do
+    ibsp.Params.CreateParam(ftInteger, intparname[I], ptInput).asinteger := intpar[I];
+
+  try
+    ibsp.ExecProc;
+    result := True;
+  except
+    result := false;
+  end;
+
+  ibsp.Free;
+end;
+
+function CriaDS(banco: TibdataBase; transa: TIBTransaction; comandoSelec: string): TIBDataSet;
+begin
+  result := TIBDataSet.create(nil);
+  result.Database := banco;
+  result.Transaction := transa;
+  result.SelectSQL.Text := comandoSelec;
+  result.Open;
+  result.First;
+end;
+
+procedure preparaDataset(DataSet: TIBDataSet; select: string);
+begin
+  //
+  with DataSet do
+  begin
+    Close;
+    SelectSQL.Text := select;
+    Open;
+    First;
+  end;
+end;
+
+function ExecSQLSimples(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+var
+  ibsExec: TIBSQL;
+begin
+  ibsExec := TIBSQL.create(nil);
+  ibsExec.Database := banco;
+  ibsExec.Transaction := transa;
+  ibsExec.SQL.Text := comandoSimples;
+
+  try
+    ibsExec.ExecQuery;
+    transa.CommitRetaining;
+    result := True;
+  except
+    result := false;
+  end;
+
+  ibsExec.Free;
+end;
+
+function ExecSQLLongo(banco: TibdataBase; transa: TIBTransaction; comandoLongo: TStrings): Boolean;
+var
+  ibsExec: TIBSQL;
+begin
+  ibsExec := TIBSQL.create(nil);
+  ibsExec.Database := banco;
+  ibsExec.Transaction := transa;
+  ibsExec.SQL := comandoLongo;
+
+  try
+    ibsExec.ExecQuery;
+    transa.CommitRetaining;
+    result := True;
+  except
+    result := false;
+  end;
+
+  ibsExec.Free;
+end;
+
+function ExisteRegistro(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+var
+  ibsTmp: TIBDataSet;
+begin
+  ibsTmp := TIBDataSet.create(nil);
+  ibsTmp.Database := banco;
+  ibsTmp.Transaction := transa;
+  ibsTmp.SelectSQL.Text := comandoSimples;
+
+  try
+    ibsTmp.Open;
+    ibsTmp.First;
+
+  except
+    result := false;
+  end;
+
+  if ibsTmp.Eof then
+    result := false
+  else
+    result := True;
+
+  ibsTmp.Free;
+end;
+
+function ExecSQLScript(banco: TibdataBase; transa: TIBTransaction; comandoSimples: string): Boolean;
+var
+  ibsExec: TIBScript;
+begin
+  ibsExec := TIBScript.create(nil);
+  ibsExec.Database := banco;
+  ibsExec.Transaction := transa;
+  ibsExec.Script.Text := comandoSimples;
+
+  try
+    ibsExec.ExecuteScript;
+    transa.CommitRetaining;
+    result := True;
+  except
+    result := false;
+  end;
+
+  ibsExec.Free;
+end;
+
+procedure SincronizaTabela(bancoOri: TibdataBase; transaOri: TIBTransaction; bancoDest: TibdataBase;
+  transaDest: TIBTransaction; nomeTab: string; chaveTab: string; Clear: Boolean);
+var
+  ibdsOri, ibdsDest: TIBDataSet;
+  pOri, pDest: TDataSetProvider;
+  cdsOri, cdsDest: TClientDataset;
+  Rbase: Integer;
+  ibdsConsMax: TIBDataSet;
+
+  I: Integer;
+begin
+  //
+  if Clear then
+    ExecSQLSimples(bancoDest, transaDest, 'delete from ' + nomeTab);
+
+  ibdsConsMax := CriaDS(bancoDest, transaDest, 'SELECT COALESCE(MAX(' + chaveTab + '),0) AS VLR FROM ' + nomeTab);
+  Rbase := ibdsConsMax.FieldByName('VLR').asinteger;
+  ibdsConsMax.Free;
+
+  ibdsDest := CriaDS(bancoDest, transaDest, 'SELECT * FROM ' + nomeTab + ' WHERE (1 = 2) ');
+  ibdsOri := CriaDS(bancoOri, transaOri, 'SELECT * FROM ' + nomeTab + ' WHERE ( ' + chaveTab + ' > ' +
+    inttostr(Rbase) + ') ');
+
+  pOri := TDataSetProvider.create(nil);
+  pDest := TDataSetProvider.create(nil);
+
+  cdsOri := TClientDataset.create(nil);
+  cdsDest := TClientDataset.create(nil);
+
+  pOri.DataSet := ibdsOri;
+  pDest.DataSet := ibdsDest;
+
+  cdsOri.SetProvider(pOri);
+  cdsDest.SetProvider(pDest);
+
+  cdsOri.Open;
+  cdsDest.Open;
+
+  cdsOri.First;
+
+  while not cdsOri.Eof do
+  begin
+    cdsDest.Insert;
+
+    for I := 0 to (cdsDest.Fields.Count - 1) do
+      cdsDest.Fields[I].AsString := cdsOri.FieldByName(cdsDest.Fields[I].FieldName).AsString;
+
+    cdsDest.Post;
+    cdsDest.ApplyUpdates(0);
+
+    cdsOri.Next;
+  end;
+
+  transaDest.CommitRetaining;
+
+  cdsOri.Close;
+  cdsDest.Close;
+  ibdsOri.Close;
+  ibdsDest.Close;
+
+  cdsOri.Free;
+  cdsDest.Free;
+  pOri.Free;
+  pDest.Free;
+  ibdsOri.Free;
+  ibdsDest.Free;
+
+end;
+
+procedure SincronizaTabela_FB_DBX(bancoOri: TibdataBase; transaOri: TIBTransaction; bancoDest: TSQLConnection;
+  nomeTab: string; chaveTab: string; Clear: Boolean);
+var
+  ibdsOri: TIBDataSet;
+  pOri, pDest: TDataSetProvider;
+  cdsOri, cdsDest: TClientDataset;
+  Rbase: Integer;
+  ibdsConsMax, ibdsDest: TSQLDataSet;
+
+  I: Integer;
+begin
+  //
+  if Clear then
+    ExecSQLSimples_DBX(bancoDest, 'delete from ' + nomeTab);
+
+  ibdsConsMax := CriaDS_DBX(bancoDest, 'SELECT COALESCE(MAX(' + chaveTab + '),0) AS VLR FROM ' + nomeTab);
+  Rbase := ibdsConsMax.FieldByName('VLR').asinteger;
+  ibdsConsMax.Free;
+
+  ibdsDest := CriaDS_DBX(bancoDest, 'SELECT * FROM ' + nomeTab + ' WHERE (1 = 2) ');
+  ibdsOri := CriaDS(bancoOri, transaOri, 'SELECT * FROM ' + nomeTab + ' WHERE ( ' + chaveTab + ' > ' +
+    inttostr(Rbase) + ') ');
+
+  pOri := TDataSetProvider.create(nil);
+  pDest := TDataSetProvider.create(nil);
+
+  cdsOri := TClientDataset.create(nil);
+  cdsDest := TClientDataset.create(nil);
+
+  pOri.DataSet := ibdsOri;
+  pDest.DataSet := ibdsDest;
+
+  cdsOri.SetProvider(pOri);
+  cdsDest.SetProvider(pDest);
+
+  cdsOri.Open;
+  cdsDest.Open;
+
+  cdsOri.First;
+
+  while not cdsOri.Eof do
+  begin
+    cdsDest.Insert;
+
+    for I := 0 to (cdsDest.Fields.Count - 1) do
+    begin
+      if (cdsDest.Fields[I].FieldName <> 'AUX' + UpperCase(nomeTab)) then
+        cdsDest.Fields[I].AsString := cdsOri.FieldByName(cdsDest.Fields[I].FieldName).AsString;
+    end;
+
+    cdsDest.Post;
+    cdsDest.ApplyUpdates(0);
+
+    cdsOri.Next;
+  end;
+
+  cdsOri.Close;
+  cdsDest.Close;
+  ibdsOri.Close;
+  ibdsDest.Close;
+
+  cdsOri.Free;
+  cdsDest.Free;
+  pOri.Free;
+  pDest.Free;
+  ibdsOri.Free;
+  ibdsDest.Free;
+
+end;
+
+procedure SincronizaTabela_DBX(bancoOri: TSQLConnection; bancoDest: TSQLConnection; nomeTab: string; chaveTab: string;
+  Clear: Boolean);
+var
+  ibdsOri, ibdsDest: TSQLDataSet;
+  pOri, pDest: TDataSetProvider;
+  cdsOri, cdsDest: TClientDataset;
+  Rbase: Integer;
+  ibdsConsMax: TSQLDataSet;
+
+  I: Integer;
+begin
+  //
+  if Clear then
+    ExecSQLSimples_DBX(bancoDest, 'delete from ' + nomeTab);
+
+  ibdsConsMax := CriaDS_DBX(bancoDest, 'SELECT COALESCE(MAX(' + chaveTab + '),0) AS VLR FROM ' + nomeTab);
+  Rbase := ibdsConsMax.FieldByName('VLR').asinteger;
+
+  if (nomeTab = 'WORKFLOW') and (Rbase < 8500) then
+    Rbase := 9000;
+
+  ibdsConsMax.Free;
+
+  ibdsDest := CriaDS_DBX(bancoDest, 'SELECT * FROM ' + nomeTab + ' WHERE (1 = 2) ');
+  ibdsOri := CriaDS_DBX(bancoOri, 'SELECT * FROM ' + nomeTab + ' WHERE ( ' + chaveTab + ' > ' + inttostr(Rbase) + ') ');
+
+  pOri := TDataSetProvider.create(nil);
+  pDest := TDataSetProvider.create(nil);
+
+  cdsOri := TClientDataset.create(nil);
+  cdsDest := TClientDataset.create(nil);
+
+  pOri.DataSet := ibdsOri;
+  pDest.DataSet := ibdsDest;
+
+  cdsOri.SetProvider(pOri);
+  cdsDest.SetProvider(pDest);
+
+  cdsOri.Open;
+  cdsDest.Open;
+
+  cdsOri.First;
+
+  while not cdsOri.Eof do
+  begin
+    cdsDest.Insert;
+
+    for I := 0 to (cdsDest.Fields.Count - 1) do
+      cdsDest.Fields[I].AsString := cdsOri.FieldByName(cdsDest.Fields[I].FieldName).AsString;
+
+    cdsDest.Post;
+    cdsDest.ApplyUpdates(0);
+
+    cdsOri.Next;
+  end;
+
+  cdsOri.Close;
+  cdsDest.Close;
+  ibdsOri.Close;
+  ibdsDest.Close;
+
+  cdsOri.Free;
+  cdsDest.Free;
+  pOri.Free;
+  pDest.Free;
+  ibdsOri.Free;
+  ibdsDest.Free;
+
+end;
+
+procedure SincronizaDados_DBX(bancoOri: TSQLConnection; ComandoOri: string; bancoDest: TSQLConnection;
+  nomeTabDest: string; Clear: Boolean);
+var
+  ibdsOri, ibdsDest: TSQLDataSet;
+  pOri, pDest: TDataSetProvider;
+  cdsOri, cdsDest: TClientDataset;
+
+  I: Integer;
+begin
+  //
+  if Clear then
+    ExecSQLSimples_DBX(bancoDest, 'delete from ' + nomeTabDest);
+
+  ibdsDest := CriaDS_DBX(bancoDest, 'SELECT * FROM ' + nomeTabDest + ' WHERE (1 = 2) ');
+  ibdsOri := CriaDS_DBX(bancoOri, ComandoOri);
+
+  // ao gravar os dados nas tabelas intermediarias alguns campos de valor, como a aliqicms , a qtde (do reg54) estao perdendo a virgula e aumentando o valor absurdamente....
+  // showmessage(ComandoOri);
+
+  pOri := TDataSetProvider.create(nil);
+  pDest := TDataSetProvider.create(nil);
+
+  cdsOri := TClientDataset.create(nil);
+  cdsDest := TClientDataset.create(nil);
+
+  pOri.DataSet := ibdsOri;
+  pDest.DataSet := ibdsDest;
+
+  cdsOri.SetProvider(pOri);
+  cdsDest.SetProvider(pDest);
+
+  cdsOri.Open;
+  cdsDest.Open;
+
+  cdsOri.First;
+
+  while not cdsOri.Eof do
+  begin
+    cdsDest.Insert;
+
+    for I := 0 to (cdsDest.Fields.Count - 1) do
+      cdsDest.Fields[I].Value := cdsOri.FieldByName(cdsDest.Fields[I].FieldName).Value;
+
+    cdsDest.Post;
+    cdsDest.ApplyUpdates(0);
+
+    cdsOri.Next;
+  end;
+
+  cdsOri.Close;
+  cdsDest.Close;
+  ibdsOri.Close;
+  ibdsDest.Close;
+
+  cdsOri.Free;
+  cdsDest.Free;
+  pOri.Free;
+  pDest.Free;
+  ibdsOri.Free;
+  ibdsDest.Free;
+
+end;
+
+procedure PovoaTabelaRand(banco: TibdataBase; transa: TIBTransaction; nomeTab: string; qtdeReg: Integer; chave: string);
+var
+  ibdsDest: TIBDataSet;
+  pDest: TDataSetProvider;
+  cdsDest: TClientDataset;
+
+  I, j, qreg: Integer;
+begin
+  //
+
+  ibdsDest := CriaDS(banco, transa, 'SELECT * FROM ' + nomeTab + ' WHERE (1 = 2) ');
+
+  pDest := TDataSetProvider.create(nil);
+
+  cdsDest := TClientDataset.create(nil);
+
+  pDest.DataSet := ibdsDest;
+
+  cdsDest.SetProvider(pDest);
+
+  cdsDest.Open;
+
+  if (nomeTab = 'LOJAS') then
+    qreg := (round(qtdeReg / 10) + 1)
+  else
+    qreg := qtdeReg;
+
+  for j := 1 to qreg do
+  begin
+    cdsDest.Insert;
+
+    for I := 0 to (cdsDest.Fields.Count - 1) do
+    begin
+      try
+        if (cdsDest.Fields[I].DataType in [ftString, ftBlob, ftMemo, ftFmtMemo, ftFixedChar, ftWideString]) then
+        begin
+          if (cdsDest.Fields[I].Size > 3) then
+            cdsDest.Fields[I].AsString := cdsDest.Fields[I].FieldName + '_' + copy(nomeTab, 1, (length(nomeTab) - 1)) +
+              '_' + inttostr(j)
+          else
+            cdsDest.Fields[I].AsString := inttostr(j) + cdsDest.Fields[I].FieldName;
+        end;
+
+        if (cdsDest.Fields[I].DataType in [ftSmallint]) then
+          cdsDest.Fields[I].asinteger := 1;
+
+        if (cdsDest.Fields[I].DataType in [ftInteger, ftWord]) then
+        begin
+          if ((cdsDest.Fields[I].FieldName = 'CODLOJA') or (cdsDest.Fields[I].FieldName = 'CODLOJAI') or
+            (cdsDest.Fields[I].FieldName = 'CODLOJASAI') or (cdsDest.Fields[I].FieldName = 'CODLOJAENT')) and
+            (nomeTab <> 'LOJAS') then
+            cdsDest.Fields[I].asinteger := (round(j / 10) + 1)
+          else
+          begin
+            if (cdsDest.Fields[I].FieldName = chave) then
+              cdsDest.Fields[I].asinteger := 0
+            else
+              cdsDest.Fields[I].asinteger := j;
+          end;
+
+        end;
+
+        if (cdsDest.Fields[I].DataType in [ftFloat, ftCurrency, ftBCD, ftFMTBcd]) then
+          cdsDest.Fields[I].AsFloat := (j * 100);
+
+        if (cdsDest.Fields[I].DataType in [ftTime, ftTimeStamp, ftDateTime, ftDate]) then
+          cdsDest.Fields[I].asdatetime := IncDay(now, j);
+
+      except
+      end;
+
+    end;
+
+    cdsDest.Post;
+    cdsDest.ApplyUpdates(0);
+
+  end;
+
+  transa.CommitRetaining;
+
+  cdsDest.Close;
+  ibdsDest.Close;
+
+  cdsDest.Free;
+  pDest.Free;
+  ibdsDest.Free;
+
+end;
+
+// compara um dataset com um stringlist | true se for igual e false se diferente
+// caso espere q a tabela esteja vazia passar '' como resultado esperado
+
+function ComparaDScomStringList(banco: TibdataBase; transa: TIBTransaction; select: string;
+  esperado: TstringList): Boolean;
+var
+  ibds: TIBDataSet;
+  I: Integer;
+  sair: Boolean;
+begin
+  sair := false;
+  result := false;
+  ibds := CriaDS(banco, transa, select);
+  ibds.FetchAll;
+
+  // SE A TABELA ESTIVER VAZIA
+  if not(ExisteRegistro(banco, transa, select)) then
+  begin
+    if esperado.Strings[0] = '' then
+      result := True
+    else
+      result := false;
+    sair := True;
+  end;
+
+  for I := 0 to ibds.RecordCount - 1 do
+  begin
+    // verifica se tem algum resultado diferente do esperado, se tiver ja sai do loop
+    if (esperado.Strings[I] <> ibds.Fields.Fields[0].AsString) or (ibds.RecordCount <> esperado.Count) then
+    begin
+      result := false; // caso o resultado real seja diferente do esperado
+      sair := True;
+      break;
+    end;
+    ibds.Next;
+  end;
+
+  if sair then
+    exit;
+
+  result := True; // caso seja o resultado real seja igual ao esperado
+
+end;
+
+function ComparaDScomStringList_dbx(banco: TSQLConnection; select: string; esperado: TstringList): Boolean;
+var
+  ibds: TClientDataset;
+  I: Integer;
+  sair: Boolean;
+begin
+  sair := false;
+  result := false;
+  ibds := CriaCDS_dbx(banco, select);
+
+  // SE A TABELA ESTIVER VAZIA
+  if not(ExisteRegistro_DBX(banco, select)) then
+  begin
+    if esperado.Strings[0] = '' then
+      result := True
+    else
+      result := false;
+    sair := True;
+  end;
+
+  for I := 0 to ibds.RecordCount - 1 do
+  begin
+    // verifica se tem algum resultado diferente do esperado, se tiver ja sai do loop
+    if (esperado.Strings[I] <> ibds.Fields.Fields[0].AsString) or (ibds.RecordCount <> esperado.Count) then
+    begin
+      result := false; // caso o resultado real seja diferente do esperado
+      sair := True;
+      break;
+    end;
+    ibds.Next;
+  end;
+
+  if sair then
+    exit;
+
+  result := True; // caso seja o resultado real seja igual ao esperado
+
+end;
+
+function campovazio(campo: array of Tfield; mostramensagem: Boolean = True): Boolean;
+var
+  I: Integer;
+begin
+  result := false;
+
+  for I := 0 to HIGH(campo) do
+  begin
+    if (campo[I].IsNull) or (campo[I].AsString = '') then
+    begin
+      result := True;
+      if mostramensagem then
+        ShowMessage('O Campo ' + campo[I].DisplayLabel + ' deve ser preenchido !!!');
+      break;
+    end;
+  end;
+end;
+
+procedure setaCDSReadOnly(cds: TClientDataset; readonly: Boolean);
+var
+  I: Integer;
+begin
+  for I := 0 to cds.Fields.Count - 1 do
+    cds.Fields.Fields[I].readonly := readonly;
+end;
+
+// função para criar um dataset DBX
+
+function CriaDS_DBX(banco: TSQLConnection; comandoSelec: string): TSQLDataSet;
+begin
+  result := TSQLDataSet.create(nil);
+  result.SQLConnection := banco;
+
+  try
+    result.CommandText := tratacomandomysql(comandoSelec, banco);
+
+    // ShowMessage(Result.CommandText);
+    result.Open;
+    result.First;
+  except
+    on e: Exception do
+      //gravalogerrotexto(nil, e.Message, false, 'CriaDS_DBX');
+      ShowMessage(e.Message);
+  end;
+end;
+
+function CriaDS_Fdac(banco: TFDConnection; comandoSelec: string): TFDQuery;
+begin
+  result := TFDQuery.create(nil);
+  result.Connection := banco;
+
+  result.SQL.Text := comandoSelec;
+  result.Open;
+  result.First;
+end;
+
+function RetornaChaveMestre(banco: TSQLConnection; nomeGenerator: string): Integer;
+begin
+  //
+  with CriaDS_DBX(banco, ' SELECT GEN_ID(' + UpperCase(nomeGenerator) + ',1) as COD from rdb$database ') do
+  begin
+    result := FieldByName('COD').asinteger;
+    Free;
+  end;
+
+end;
+
+// função que cria um dataset DBX  mas retorna sem abrir para poder parametrizar
+
+function CriaDSPARAM_DBX(banco: TSQLConnection; comandoSelec: string): TSQLDataSet;
+begin
+  result := TSQLDataSet.create(nil);
+  result.SQLConnection := banco;
+  result.CommandText := comandoSelec;
+end;
+
+function CriaDSPARAM_Fdac(banco: TFDConnection; comandoSelec: string): TFDQuery;
+begin
+  result := TFDQuery.create(nil);
+  result.Connection := banco;
+
+  result.SQL.Text := comandoSelec;
+end;
+
+function CriaComPARAM_Fdac(banco: TFDConnection; comandoSelec: string): TFDCommand;
+begin
+  result := TFDCommand.create(nil);
+  result.Connection := banco;
+
+  result.CommandText.Text := comandoSelec;
+end;
+
+function CriaCDS_dbx(banco: TSQLConnection; comandoSelec: string): TClientDataset;
+var
+  ibstemp: TSQLDataSet;
+  ptemp: TDataSetProvider;
+begin
+
+  ibstemp := CriaDS_DBX(banco, comandoSelec);
+
+  ibstemp.Close;
+  ptemp := TDataSetProvider.create(nil);
+  ptemp.UpdateMode := upWhereKeyOnly;
+  ptemp.DataSet := ibstemp;
+
+  result := TClientDataset.create(nil);
+  result.SetProvider(ptemp);
+  ibstemp.Open;
+  result.Open;
+  result.First;
+end;
+
+class procedure TEventHandlers.cdsGeralBeforeGetRecords(Sender: Tobject; var OwnerData: OleVariant);
+var
+  vCodCli, vUsuario, vSenha: string;
+begin
+  OwnerData := VarArrayOf([select, vCodCli, vUsuario, vSenha]);
+end;
+
+function CriaCDS_dbxSnap(banco: TDSProviderConnection; comandoSelec: string; provider: string = ''): TClientDataset;
+var
+  evento: TEventHandlers;
+begin
+  evento := TEventHandlers.create;
+  evento.select := comandoSelec;
+
+  if provider = '' then
+  provider := 'dspGeral';
+
+  result := TClientDataset.create(nil);
+  result.RemoteServer := banco;
+  result.ProviderName := provider;
+  result.BeforeGetRecords := evento.cdsGeralBeforeGetRecords;
+
+  result.Open;
+  result.First;
+end;
+
+// Define as flags para gravar...
+
+procedure setaFlagConsultaMultipla(strTabela: string; cdsPadrao: TClientDataset; dsePadrao: TSQLDataSet;
+  dp: TDataSetProvider; banco: TSQLConnection; cKey1: string; cKey2: string; cKey3: string);
+var
+  I: Integer;
+  dsTMP: TSQLDataSet;
+begin
+  //
+  dp.UpdateMode := upWhereChanged;
+
+  dsTMP := CriaDS_DBX(banco, ' SELECT SC.CAMPO FROM SYSCAMPOS SC    ' + ' WHERE SC.CODTAB = (SELECT ST.CODTAB FROM ' +
+    '  SYSTAB ST WHERE ST.TABELA = ' + QuotedStr(strTabela) + ')');
+
+  for I := 0 to (cdsPadrao.FieldCount - 1) do
+  begin
+    if (not(dsTMP.Locate('CAMPO', cdsPadrao.Fields[I].FieldName, [loCaseInsensitive]))) then
+    begin // pfHidden
+      cdsPadrao.Fields[I].ProviderFlags := [];
+      cdsPadrao.Fields[I].Visible := True;
+    end
+    else
+      cdsPadrao.Fields[I].ProviderFlags := [pfInUpdate];
+
+    if (UpperCase(cdsPadrao.Fields[I].FieldName) = UpperCase(cKey1)) or
+      (UpperCase(cdsPadrao.Fields[I].FieldName) = UpperCase(cKey2)) or
+      (UpperCase(cdsPadrao.Fields[I].FieldName) = UpperCase(cKey3)) then
+      cdsPadrao.Fields[I].ProviderFlags := [pfInUpdate, pfInWhere, pfInKey];
+  end;
+
+  if not dsePadrao.Active then
+    dsePadrao.Open;
+
+  for I := 0 to (dsePadrao.FieldCount - 1) do
+  begin
+    if (not(dsTMP.Locate('CAMPO', dsePadrao.Fields[I].FieldName, [loCaseInsensitive]))) then
+    begin // pfHidden
+      dsePadrao.Fields[I].ProviderFlags := [];
+      dsePadrao.Fields[I].Visible := True;
+    end
+    else
+      dsePadrao.Fields[I].ProviderFlags := [pfInUpdate];
+
+    if (UpperCase(dsePadrao.Fields[I].FieldName) = UpperCase(cKey1)) or
+      (UpperCase(dsePadrao.Fields[I].FieldName) = UpperCase(cKey2)) or
+      (UpperCase(dsePadrao.Fields[I].FieldName) = UpperCase(cKey3)) then
+      dsePadrao.Fields[I].ProviderFlags := [pfInUpdate, pfInWhere, pfInKey];
+  end;
+
+  dsTMP.Free;
+end;
+
+procedure SomeComCampo(cds: TClientDataset; campo: array of string);
+var
+  I: Integer;
+begin
+  for I := 0 to high(campo) do
+  begin
+    if (cds.Fields.FindField(upper(campo[I])) <> nil) then
+      cds.Fields.FindField(upper(campo[I])).Visible := false;
+  end;
+
+end;
+
+procedure setapropriedadesFireBird(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'IBConnection';
+  dbxDB.DriverName := 'Interbase';
+  dbxDB.GetDriverFunc := 'getSQLDriverINTERBASE';
+  dbxDB.LibraryName := 'dbexpint.dll';
+  dbxDB.VendorLib := 'fbclient.dll';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('CommitRetain=False');
+  dbxDB.Params.Add('Database=' + pHost + ':' + pBanco);
+  dbxDB.Params.Add('DriverName=Interbase');
+  dbxDB.Params.Add('ErrorResourceFile=');
+  dbxDB.Params.Add('LocaleCode=0000');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('RoleName=RoleName');
+  dbxDB.Params.Add('ServerCharSet=');
+  dbxDB.Params.Add('SQLDialect=3');
+  dbxDB.Params.Add('Interbase TransIsolation=ReadCommited ');
+  dbxDB.Params.Add('User_Name=sysdba');
+  dbxDB.Params.Add('WaitOnLocks=True');
+end;
+
+procedure setapropriedadesSQLSERVER(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'SQLServerConnection';
+  dbxDB.DriverName := 'SQLServer';
+  dbxDB.GetDriverFunc := 'getSQLDriverSQLServer';
+  dbxDB.LibraryName := 'dbexpsda.dll';
+  dbxDB.VendorLib := 'sqloledb.dll';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('HostName=' + pHost);
+  dbxDB.Params.Add('DataBase=' + pBanco);
+  dbxDB.Params.Add('DriverName=SQLServer');
+  dbxDB.Params.Add('User_Name=sa');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('LongStrings=True');
+  dbxDB.Params.Add('EnableBCD=True');
+  dbxDB.Params.Add('FetchAll=True');
+end;
+
+procedure setapropriedadesFireCrLabs(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'Devart InterBase';
+  DBXdB.DriverName := 'DevartInterBase';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('DriverName=DevartInterBase');
+  dbxDB.Params.Add('DataBase=' + pHost + ':' + pBanco);
+  dbxDB.Params.Add('RoleName=');
+  dbxDB.Params.Add('User_Name=SYSDBA');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('SQLDialect=3');
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('LocaleCode=0000');
+  dbxDB.Params.Add('UseUnicode=false');
+
+end;
+
+procedure setapropriedadesFireCrLabsJP(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'Devart InterBase';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('DriverName=DevartInterBase');
+  dbxDB.Params.Add('DataBase=' + pHost + ':' + pBanco);
+  dbxDB.Params.Add('RoleName=');
+  dbxDB.Params.Add('User_Name=SYSDBA');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('SQLDialect=3');
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('LocaleCode=0000');
+  dbxDB.Params.Add('UseUnicode=true');
+
+end;
+
+procedure setapropriedadesFireDacfirebird(dbxDB: TFDConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'Devart InterBase';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('Database=' + pBanco);
+  dbxDB.Params.Add('User_Name=SYSDBA');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('Server=' + pHost);
+  dbxDB.Params.Add('DriverID=FB');
+
+end;
+
+
+procedure setapropriedadesFireDac(dbxDB: TFDConnection; pHost, pBanco, pSenha: string);
+begin
+  dbxDB.ConnectionName := 'Devart InterBase';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('Database=' + pBanco);
+  dbxDB.Params.Add('User_Name=SYSDBA');
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('Server=' + pHost);
+  dbxDB.Params.Add('DriverID=IB');
+
+end;
+
+procedure setapropriedadesMySqlCrLabs(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string; usu: string = 'root');
+begin
+  dbxDB.ConnectionName := 'Devart MySQL';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('HostName=' + pHost);
+  dbxDB.Params.Add('DataBase=' + pBanco);
+  dbxDB.Params.Add('DriverName=DevartMySQL');
+  dbxDB.Params.Add('User_Name=' + usu);
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('FetchAll=True');
+  dbxDB.Params.Add('EnableBoolean=False');
+  dbxDB.Params.Add('IPVersion=IPv4');
+  dbxDB.Params.Add('UseUnicode=false');
+
+end;
+
+procedure setapropriedadesMySqlCrLabsJP(dbxDB: TSQLConnection; pHost, pBanco, pSenha: string; usu: string = 'root');
+begin
+  dbxDB.ConnectionName := 'Devart MySQL';
+  dbxDB.LoginPrompt := false;
+
+  // Adiciona os parametros adequados
+  dbxDB.Params.Clear;
+  dbxDB.Params.Add('BlobSize=-1');
+  dbxDB.Params.Add('HostName=' + pHost);
+  dbxDB.Params.Add('DataBase=' + pBanco);
+  dbxDB.Params.Add('DriverName=DevartMySQL');
+  dbxDB.Params.Add('User_Name=' + usu);
+  dbxDB.Params.Add('Password=' + pSenha);
+  dbxDB.Params.Add('FetchAll=True');
+  dbxDB.Params.Add('EnableBoolean=False');
+  dbxDB.Params.Add('IPVersion=IPv4');
+  dbxDB.Params.Add('UseUnicode=True');
+
+end;
+
+function ExecSQLSimples_DBX(banco: TSQLConnection; comandoSimples: string): Boolean;
+var
+  dSet: TSQLDataSet;
+begin
+  //
+  dSet := TSQLDataSet.create(nil);
+  dSet.SQLConnection := banco;
+  dSet.CommandText := comandoSimples;
+
+  if FileExists(ExtractFilePath(Application.ExeName) + 'sql') then
+    showmessage(comandoSimples);
+
+  try
+    dSet.ExecSQL(True);
+    result := True;
+  except on E: Exception do
+    result := false;
+  end;
+    FreeAndNil(dset);
+end;
+
+function ExecSQLSimples_fdac(banco: TFDConnection; comandoSimples: string): Boolean;
+var
+  dSet: TFDQuery;
+begin
+  //
+  dSet := TFDQuery.create(nil);
+  dSet.Connection := banco;
+  dSet.SQL.Text := comandoSimples;
+
+  try
+    dSet.ExecSQL;
+    result := True;
+  except
+    result := false;
+  end;
+
+end;
+
+function isComandoOK(banco: TSQLConnection; comandoSimples: string): Boolean;
+var
+  dSet: TSQLDataSet;
+begin
+  //
+  dSet := TSQLDataSet.create(nil);
+  dSet.SQLConnection := banco;
+  dSet.CommandText := comandoSimples;
+
+  try
+    dSet.Open;
+    result := True;
+  except
+    result := false;
+  end;
+
+end;
+
+function ExisteRegistro_DBXSnap(banco: TDSProviderConnection; comandoSimples: string): Boolean;
+var
+  evento: TEventHandlers;
+  cds: TClientDataset;
+begin
+  evento := TEventHandlers.create;
+  evento.select := comandoSimples;
+
+  cds := TClientDataset.create(nil);
+  cds.RemoteServer := banco;
+  cds.ProviderName := 'dspGeral';
+  cds.BeforeGetRecords := evento.cdsGeralBeforeGetRecords;
+
+  try
+    cds.Open;
+    cds.First;
+
+  except
+    result := false;
+
+  end;
+
+  if cds.Eof then
+    result := false
+  else
+    result := True;
+
+  cds.Free;
+end;
+
+function ExisteRegistro_DBX(banco: TSQLConnection; comandoSimples: string): Boolean;
+var
+  ibsTmp: TSQLDataSet;
+begin
+  ibsTmp := TSQLDataSet.create(nil);
+  ibsTmp.SQLConnection := banco;
+
+  ibsTmp.CommandText := tratacomandomysql(comandoSimples, banco);
+
+  try
+    ibsTmp.Open;
+    ibsTmp.First;
+
+  except
+    result := false;
+
+  end;
+
+  if ibsTmp.Eof then
+    result := false
+  else
+    result := True;
+
+  ibsTmp.Free;
+end;
+
+function ExisteRegistro_fdac(banco: TFDConnection; comandoSimples: string): Boolean;
+var
+  ibsTmp: TFDQuery;
+begin
+  ibsTmp := TFDQuery.create(nil);
+  ibsTmp.Connection := banco;
+
+  ibsTmp.SQL.Text := comandoSimples;
+
+  try
+    ibsTmp.Open;
+    ibsTmp.First;
+
+  except
+    result := false;
+  end;
+
+  if ibsTmp.Eof then
+    result := false
+  else
+    result := True;
+
+  ibsTmp.Free;
+end;
+
+// Prepara um comando para os diferentes tipos de SGDB
+
+function PreparaComando(strComando: string; tipoBanco: TBaseDados): string;
+begin
+  if (tipoBanco = bdSQLSERVER) then
+  begin
+    // Arruma os substrings
+    { while pos('FOR', Upper(strComando)) > 0 do
+      begin
+      strTeco := TextoDelimitado(Upper(strComando), 'SUBSTRING', 'FOR') + 'FOR';
+      strtmp := TrocaStr(Upper(strTeco), 'FROM', ',');
+      strtmp := TrocaStr(Upper(strtmp), 'FOR', ',');
+      strComando := TrocaStr(UPPER(strComando), UPPER(strTeco), UPPER(strtmp));
+      end; }// - problema , porque tem tabela que tem for no nome ,ex: fornecedor
+
+    // Arruma os cuurent_date
+    while pos('CURRENT_DATE', upper(strComando)) > 0 do
+    begin
+      strComando := TrocaStr(upper(strComando), upper('CURRENT_DATE'), upper('GETDATE()'));
+    end;
+
+    // Substitui
+    if pos('<SEXCI>', upper(strComando)) > 0 then
+    begin
+      strComando := TrocaStr(upper(strComando), upper(TextoDelimitado(upper(strComando), '/*<SEXCI>*/', '/*<SEXCF>*/')),
+        upper(TextoDelimitado(upper(strComando), '<SINCI>', '<SINCF>')));
+    end;
+
+  end;
+
+  result := strComando;
+end;
+
+function TemErroDadosSQL(banco: TSQLConnection; comandoSimples: string): Boolean;
+begin
+  result := false;
+  if ExisteRegistro_DBX(banco, comandoSimples) then
+  begin
+    if FileExists(ExtractFilePath(Application.ExeName) + 'sql') then
+    begin
+      Clipboard.AsText := comandoSimples;
+      ShowMessage('Erro em dados necessários para consulta. Utilize o Seguinte select para verificar os dados: ' + #10 +
+        #13 + comandoSimples);
+    end
+    else
+      ShowMessage('Erro em dados necessários para consulta.');
+    result := True;
+  end;
+
+end;
+
+function PegaParamSelect(select: string): string;
+var
+  pd: Integer;
+  I: Integer;
+  strParam: string;
+begin
+  //
+  pd := pos(':', select);
+
+  if pd <= 0 then
+    result := ''
+  else
+  begin
+    for I := (pd + 1) to length(select) do
+    begin
+      if (select[I] = ' ') or (select[I] = #13) or (select[I] = ')') then
+        break
+      else
+        strParam := strParam + select[I];
+    end;
+
+    result := strParam;
+  end;
+
+end;
+
+function PegaDataSourceDFM(comp: string): string;
+var
+  pd: Integer;
+  I: Integer;
+  strParam: string;
+begin
+  //
+  pd := pos('DataSource = ', comp);
+
+  if pd <= 0 then
+    result := ''
+  else
+  begin
+    for I := (pd) to length(comp) do
+    begin
+      if (comp[I] = #13) then
+        break
+      else
+        strParam := strParam + comp[I];
+    end;
+
+    result := strParam;
+  end;
+
+end;
+
+function ComparaDadosDuasBASE(bancoOrigem, bancoDestino: TSQLConnection; select: string): Boolean;
+var
+  dsOri, dsDest: TClientDataset;
+  I: Integer;
+begin
+  result := True;
+
+  dsOri := CriaCDS_dbx(bancoOrigem, select);
+  dsDest := CriaCDS_dbx(bancoDestino, select);
+
+  if (dsOri.RecordCount <> dsDest.RecordCount) then
+  begin
+    result := false;
+    exit;
+  end;
+
+  if (dsOri.FieldCount <> dsDest.FieldCount) then
+  begin
+    result := false;
+    exit;
+  end;
+
+  while not dsOri.Eof do
+  begin
+    for I := 0 to (dsOri.FieldCount - 1) do
+    begin
+      if dsOri.Fields[I].IsNull then
+      begin
+        if dsDest.Fields[I].IsNull then
+          Continue
+        else
+        begin
+          result := false;
+          break;
+        end;
+      end;
+
+      if (dsOri.Fields[I] is TNumericField) then
+      begin
+        if Arredondar(dsOri.Fields[I].AsFloat, 3) <> Arredondar(dsDest.Fields[I].AsFloat, 3) then
+        begin
+          result := false;
+          break;
+        end;
+      end
+      else
+      begin
+        if (dsOri.Fields[I].AsString <> dsDest.Fields[I].AsString) then
+        begin
+          result := false;
+          break;
+        end;
+      end;
+
+    end; // do for
+
+    dsOri.Next;
+    dsDest.Next;
+
+    if not result then
+      break;
+  end;
+
+  dsOri.Free;
+  dsDest.Free;
+end;
+
+function ExecSQLMultiplos_DBX(banco: TSQLConnection; comandoMultiplo: TStrings): Boolean;
+var
+  I: Integer;
+begin
+  //
+  for I := 0 to comandoMultiplo.Count - 1 do
+    ExecSQLSimples_DBX(banco, comandoMultiplo[I]);
+end;
+
+function ConectaBancoBConf(banco: TSQLConnection; pathExe: string): Boolean;
+var
+  inibd: tinifile;
+  cripto: TLbBlowfish;
+begin
+  //
+
+  cripto := TLbBlowfish.create(nil);
+  inibd := tinifile.create(pathExe + 'businessconf.ini');
+
+  cripto.CipherMode := cmECB;
+
+  if (trim(inibd.ReadString('dados', 'SQLSERVER', '')) = '1') then
+  begin
+    banco.Tag := 2;
+
+    setapropriedadesSQLSERVER(banco, inibd.ReadString('dados', 'host', ''), inibd.ReadString('dados', 'caminho', ''),
+      cripto.DecryptString(inibd.ReadString('dados', 'senha', '')));
+
+  end
+  else
+  begin
+    banco.Tag := 1;
+
+    setapropriedadesFireCrLabs(banco, inibd.ReadString('dados', 'host', ''), inibd.ReadString('dados', 'caminho', ''),
+      cripto.DecryptString(inibd.ReadString('dados', 'senha', '')));
+
+  end;
+
+  try
+    banco.Open;
+    result := True;
+  except
+    result := false;
+  end;
+
+  cripto.Free;
+  inibd.Free;
+
+end;
+
+procedure LogUsoREl(CodRel: string; codcliADv, codUsuUtiliza: Integer; banco: TSQLConnection);
+
+begin
+  //
+  if (codcliADv = 7777777) or (codcliADv = 999999) or (codcliADv = -7) or (codcliADv = 1000000000) or
+    (FileExists('c:\windows\system32\suporte')) or (FileExists(ExtractFilePath(Application.ExeName) + 'nLoga1606.zic'))
+  then
+    exit;
+
+  ExecSQLSimples_DBX(banco, 'insert into relslog (CODIGO , CODCLIADV , CODUSUUTILIZA)  ' + ' VALUES (' +
+    QuotedStr(CodRel) + ',' + inttostr(codcliADv) + ',' + inttostr(codUsuUtiliza) + ')');
+
+end;
+
+procedure LogUsoWorkFlow(CodRel: string; codcliADv, codUsuUtiliza: Integer; banco: TSQLConnection);
+
+begin
+  //
+  if (codcliADv = 7777777) or (codcliADv = 999999) or (codcliADv = -7) or (codcliADv = 1000000000) or
+    (FileExists('c:\windows\system32\suporte')) or (FileExists(ExtractFilePath(Application.ExeName) + 'nLoga1606.zic'))
+  then
+    exit;
+
+  ExecSQLSimples_DBX(banco, 'insert into WORKFLOWLOG (CODIGO , CODCLIADV , CODUSUUTILIZA)  ' + ' VALUES (' +
+    QuotedStr(CodRel) + ',' + inttostr(codcliADv) + ',' + inttostr(codUsuUtiliza) + ')');
+
+end;
+
+function pegaCodCliADV(pathINI: string): Integer;
+var
+  iniCli: tinifile;
+  DES: TLb3DES;
+begin
+  //
+  iniCli := tinifile.create(pathINI);
+  DES := TLb3DES.create(nil);
+
+  result := strtoint(DES.DecryptString(iniCli.ReadString('Business', 'chave', '')));
+
+  DES.Free;
+  iniCli.Free;
+end;
+
+// cria um stringlist a partir de um campo de um client
+
+function CriaStringListdoClient(cds: TClientDataset; field: string): TstringList;
+var
+  cdsList: TstringList;
+  codcli: Integer;
+begin
+  codcli := 0;
+  cdsList := TstringList.create;
+  cds.Open;
+  cds.DisableControls;
+  cds.IndexFieldNames := 'CODCLI';
+  cds.First;
+
+  while not cds.Eof do
+  begin
+    if cds.FieldByName(field).asinteger <> codcli then
+    begin
+      cdsList.Add(cds.FieldByName(field).AsString);
+      codcli := cds.FieldByName(field).asinteger;
+    end;
+    cds.Next;
+  end;
+  cds.EnableControls;
+  result := cdsList;
+
+end;
+
+function BuscacnpjSefaz(cnpj: string): string;
+var
+  w: THttpCli;
+  tst: TStringStream;
+  strpag: string;
+begin
+  strpag := '';
+
+  w := THttpCli.create(nil);
+  w.URL := 'http://receitaws.com.br/v1/cnpj/' + cnpj;
+  // w.RcvdStream := TStringStream.Create(strpag);
+  tst := TStringStream.create('');
+
+  try
+    w.RcvdStream := tst;
+    w.Get;
+
+    strpag := tst.DataString;
+  except
+  end;
+
+  w.Free;
+  tst.Free;
+
+  result := trim(strpag);
+end;
+
+function getAvisoWebAdv: string;
+var
+  w: THttpCli;
+  tst: TStringStream;
+  strpag: string;
+begin
+  strpag := '';
+
+  w := THttpCli.create(nil);
+  w.URL := 'http://www.sistemagerencial.com.br/MsgAdv/avisonew.html';
+  // w.RcvdStream := TStringStream.Create(strpag);
+  tst := TStringStream.create('');
+
+  try
+    w.RcvdStream := tst;
+    w.Get;
+
+    strpag := tst.DataString;
+  except
+  end;
+
+  w.Free;
+  tst.Free;
+
+  result := trim(strpag);
+end;
+
+function ConectaBdRemoto_new(banco: TSQLConnection): Boolean;
+
+var
+  vhostRemotoRemot, vBdremotoRemot, VsenhaRemotaRemot: string;
+begin
+
+  // V 13.1
+  // Se houver o ini ele simplesmente Lê, se não houver e for desenvolvimento ou estiver na aDv ele da Erro, senão conecta do cliente.
+  if (not(temIniBdRemoto)) and (isUsingSourceCode or isInAdvNet) then
+  begin
+    MessageDlg('Não encontrado arquivo bdDese.ini !', mtWarning, [mbOK], 0);
+    Application.Terminate;
+  end;
+
+  if temIniBdRemoto then
+    LeBdDeseIni(vhostRemotoRemot, vBdremotoRemot, VsenhaRemotaRemot)
+  else
+    LeDadosremotoWeb(vhostRemotoRemot, vBdremotoRemot, VsenhaRemotaRemot);
+
+  setapropriedadesFireCrLabs(banco, vhostRemotoRemot, vBdremotoRemot, VsenhaRemotaRemot);
+
+  try
+    banco.Open;
+    result := True;
+  except
+    on e: Exception do
+    begin
+      result := false;
+      ShowMessage(e.Message);
+    end;
+  end;
+
+end;
+
+function LeDadosremotoWeb(var vpHost: string; var vpBanco: string; var vpSenha: string): Boolean;
+var
+  w: THttpCli;
+  tst: TStringStream;
+  strpag: string;
+  cripto: TLbBlowfish;
+begin
+  cripto := TLbBlowfish.create(nil);
+  w := THttpCli.create(nil);
+  w.URL := 'http://www.controledeservico.com/users/xptbusy/0';
+  // w.RcvdStream := TStringStream.Create(strpag);
+  tst := TStringStream.create('');
+
+  w.RcvdStream := tst;
+  w.Get;
+
+  strpag := tst.DataString;
+
+  // ShowMessage(strpag);
+  vpSenha := cripto.DecryptString(TextoDelimitado(strpag, 'senha=', '</p>'));
+  vpHost := TextoDelimitado(strpag, 'host=', '</h1>');
+  vpBanco := TextoDelimitado(strpag, 'caminho=', '</h2>');
+
+  cripto.Free;
+
+end;
+
+function LeBusinessConfIni(var vpHost: string; var vpBanco: string; var vpSenha: string; var isSQLServer: Boolean;
+  var vpCep: string): Boolean;
+var
+  inibd: tinifile;
+  cripto: TLbBlowfish;
+begin
+  //
+
+  inibd := tinifile.create(ExtractFilePath(Application.ExeName) + 'businessconf.ini');
+  cripto := TLbBlowfish.create(nil);
+
+  // controla se o banco é SQLSERVER ou não.
+  if (trim(inibd.ReadString('dados', 'SQLSERVER', '')) = '1') then
+    isSQLServer := True
+  else
+    isSQLServer := false;
+
+  // Guarda alguns valores do INI para uso no DBX
+  vpHost := inibd.ReadString('dados', 'host', '');
+  vpBanco := inibd.ReadString('dados', 'caminho', '');
+  vpSenha := cripto.DecryptString(inibd.ReadString('dados', 'senha', ''));
+  vpCep := inibd.ReadString('dados', 'caminhoCEP', '');
+
+  cripto.Free;
+  inibd.Free;
+end;
+
+function LeBdDeseIni(var vpHost: string; var vpBanco: string; var vpSenha: string): Boolean;
+var
+  inibd: tinifile;
+  cripto: TLbBlowfish;
+begin
+  //
+
+  inibd := tinifile.create(ExtractFilePath(Application.ExeName) + 'bdDese.ini');
+  cripto := TLbBlowfish.create(nil);
+
+  // Guarda alguns valores do INI para uso no DBX
+  vpHost := inibd.ReadString('dados', 'host', '');
+  vpBanco := inibd.ReadString('dados', 'caminho', '');
+  vpSenha := cripto.DecryptString(inibd.ReadString('dados', 'senha', ''));
+
+  cripto.Free;
+  inibd.Free;
+end;
+
+function ConectaBancoDBX(var banco: TSQLConnection): Boolean;
+var
+  vpHost, vpBanco, vpSenha, vpCep: string;
+  isSQLServer: Boolean;
+begin
+
+  LeBusinessConfIni(vpHost, vpBanco, vpSenha, isSQLServer, vpCep);
+
+  { ***Conexão ao DBX*** }
+  // Realiza uma conexão ao DBX
+  if (isSQLServer) then
+  begin
+    setapropriedadesMySqlCrLabs(banco, vpHost, vpBanco, vpSenha);
+    banco.Tag := 2; // seta a tag do banco para 2 - significa que conectou num banco sql
+  end
+  else
+  begin
+    setapropriedadesFireCrLabs(banco, vpHost, vpBanco, vpSenha);
+    banco.Tag := 1; // seta a tag do banco para 1 - significa que conectou num banco firebird
+  end;
+
+  try
+    banco.Open;
+    result := True;
+  except
+    on e: Exception do
+      ShowMessage(e.Message);
+
+  end;
+
+end;
+
+function ConectaBancoIB(var banco: TIBDatabase; var transaction: TIBTransaction; cripto: TLbBlowfish): Boolean;
+var
+  inibd: tinifile;
+  vpHost, vpBanco, vpSenha: string;
+  ConectaBanco: Boolean;
+begin
+  //
+  banco.Connected := False;
+
+  inibd := TIniFile.Create(ExtractFilePath(Application.ExeName) + 'businessconf.ini');
+
+  banco.DatabaseName := inibd.ReadString('dados', 'caminhobanco', '');
+
+  banco.Params.Clear;
+  banco.Params.Add('user_name=' + inibd.ReadString('dados', 'usuario', ''));
+  banco.Params.Add('password=' + cripto.DecryptString(inibd.ReadString('dados', 'senha', '')));
+  banco.Params.Add('lc_ctype=' + inibd.ReadString('dados', 'ctipo', ''));
+
+  vpHost := inibd.ReadString('dados', 'host', '');
+  vpBanco := inibd.ReadString('dados', 'caminho', '');
+  vpSenha := cripto.DecryptString(inibd.ReadString('dados', 'senha', ''));
+
+  try
+    banco.Connected := true;
+    banco.DefaultTransaction := transaction;
+    transaction.Active := True;
+    ConectaBanco := True;
+  except on E: Exception do
+  begin
+    ShowMessage(E.Message);
+    ConectaBanco := False;
+  end;
+
+  end;
+
+  inibd.Free;
+
+  Result := ConectaBanco;
+end;
+
+
+{ ***Fim da Conexão ao DBX*** }
+
+function ConectaBancoFiredac(var banco: TFDConnection): Boolean;
+var
+  vpHost, vpBanco, vpSenha, vpCep: string;
+  isSQLServer: Boolean;
+
+begin
+
+  LeBusinessConfIni(vpHost, vpBanco, vpSenha, isSQLServer, vpCep);
+
+  { ***Conexão ao Firedac*** }
+  // Realiza uma conexão ao firedac
+
+  setapropriedadesFireDac(banco, vpHost, vpBanco, vpSenha);
+  banco.Tag := 1; // seta a tag do banco para 1 - significa que conectou num banco firebird
+
+  try
+    banco.Open;
+    result := True;
+  except
+    result := false;
+  end;
+
+  { ***Fim da Conexão ao DBX*** }
+
+end;
+
+function ConectaCepDBX(var banco: TSQLConnection): Boolean;
+var
+  vpHost, vpBanco, vpSenha, vpCep: string;
+  isSQLServer: Boolean;
+
+begin
+
+  LeBusinessConfIni(vpHost, vpBanco, vpSenha, isSQLServer, vpCep);
+
+  { ***Conexão ao DBX*** }
+  // Realiza uma conexão ao DBX
+  if (isSQLServer) then
+  begin
+    setapropriedadesMySqlCrLabs(banco, vpHost, vpCep, vpSenha);
+    banco.Tag := 2; // seta a tag do banco para 2 - significa que conectou num banco sql
+  end
+  else
+  begin
+    setapropriedadesFireCrLabs(banco, vpHost, vpCep, vpSenha);
+    banco.Tag := 1; // seta a tag do banco para 1 - significa que conectou num banco firebird
+  end;
+
+  try
+    banco.Open;
+    result := True;
+  except
+    result := false;
+  end;
+
+  { ***Fim da Conexão ao DBX*** }
+
+end;
+
+function CriaDbxDB: TSQLConnection;
+var
+  banco: TSQLConnection;
+begin
+  banco := TSQLConnection.create(nil);
+
+  if ConectaBancoDBX(banco) then
+    result := banco
+  else
+    result := nil;
+
+end;
+
+function RetornaChaveMestreIb(banco: TibdataBase; trans: TIBTransaction; nomeGenerator: string): Integer;
+begin
+  //
+  with CriaDS(banco, trans, ' SELECT GEN_ID(' + UpperCase(nomeGenerator) + ',1) as COD from rdb$database ') do
+  begin
+    result := FieldByName('COD').asinteger;
+    Free;
+  end;
+
+end;
+
+procedure ExportaComandoCSV(banco: TSQLConnection; nomeARQ: string; comando: string);
+var
+  dsExporta: TSQLDataSet;
+  stCSV: TstringList;
+  stringona, strField: string;
+  I: Integer;
+begin
+  //
+  stCSV := TstringList.create;
+  dsExporta := CriaDS_DBX(banco, comando);
+
+  // Adiciona o título
+  stringona := '$#@';
+
+  for I := 0 to (dsExporta.FieldCount - 1) do
+    stringona := stringona + ';' + #34 + dsExporta.Fields[I].FieldName + #34;
+
+  stCSV.Add(TrocaStr(stringona, '$#@;', ''));
+
+  while not dsExporta.Eof do
+  begin
+    stringona := '$#@';
+
+    for I := 0 to (dsExporta.FieldCount - 1) do
+    begin
+      strField := iif((dsExporta.Fields[I] is TNumericField), dsExporta.Fields[I].AsString,
+        (#34 + dsExporta.Fields[I].AsString + #34));
+      if (pos(',', strField) > 0) and (dsExporta.Fields[I] is TNumericField) then
+        strField := TrocaStr(strField, ',', '.');
+
+      strField := RetiraCar(strField, #10);
+      strField := RetiraCar(strField, #13);
+
+      stringona := stringona + ';' + strField;
+    end;
+
+    dsExporta.Next;
+    stCSV.Add(TrocaStr(stringona, '$#@;', ''));
+  end;
+
+  stCSV.SaveToFile(nomeARQ);
+  stCSV.Free;
+  dsExporta.Free;
+end;
+
+function pegaCODOS(banco: TSQLConnection): Integer;
+var
+  ds: TSQLDataSet;
+begin
+  ExecSQLSimples_DBX(banco, 'UPDATE NOVOS SET OS = (OS + 2)');
+
+  ds := CriaDS_DBX(banco, 'SELECT OS FROM NOVOS');
+
+  result := ds.FieldByName('OS').asinteger;
+
+  ds.Free;
+end;
+
+function isRelOk(CodRel: Integer; banco: TSQLConnection; validaOrdem: Boolean): string;
+var
+  strErro, strComando, strComandoORD, strErroOrder: string;
+  dsOrdem: TSQLDataSet;
+begin
+  result := 'OK';
+  strErro := '';
+
+  // Testa o Select em Sí
+  with CriaDS_DBX(banco, ' select * from sql where codrel = ' + inttostr(CodRel)) do
+  begin
+    while not Eof do
+    begin
+      strComando := TrocaStr(FieldByName('comando').AsString, '/*and*/', ' and (1 = 2) ');
+      strComando := TrocaStr(strComando, ':codloja', ' 1 ');
+      strComando := TrocaStr(strComando, ':codLoja', ' 1 ');
+      strComando := TrocaStr(strComando, ':dtIni', QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, ':dtFin', QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, '/*<COPYDATA>*/', ' = ' + QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, '/*<COPYDATA2>*/', ' = ' + QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, ':codOs ', ' 1 ');
+      strComando := TrocaStr(strComando, ':codOs1 ', ' 1 ');
+      strComando := TrocaStr(strComando, ':codMon', ' 1 ');
+      strComando := TrocaStr(strComando, ':codmon', ' 1 ');
+      strComando := TrocaStr(strComando, ':codent', ' 1 ');
+      strComando := TrocaStr(strComando, ':codsai', ' 1 ');
+      strComando := TrocaStr(strComando, ':codtransf', ' 1 ');
+      strComando := TrocaStr(strComando, 'codnf = :cod', 'codnf = 1');
+      strComando := TrocaStr(strComando, ':dti ', QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, ':dtf ', QuotedStr('01/01/1980'));
+      strComando := TrocaStr(strComando, ':cod', ' 1 ');
+
+      if not isComandoOK(banco, strComando) then
+      begin
+        strErro := 'Erro de Select;';
+        // ShowMessage(strComando);
+      end;
+
+      // Order By
+      if (FieldByName('ORDENADO').asinteger = 1) and (validaOrdem) then
+      begin
+        dsOrdem := CriaDS_DBX(banco, 'select * from campos where podeordem = 1 and codrel = ' + inttostr(CodRel));
+        strErroOrder := '';
+
+        while not dsOrdem.Eof do
+        begin
+          if (pos('order', strComando) > 0) then
+            strComandoORD := TrocaStr(strComando, 'order by', 'order /*cv*/by ' + dsOrdem.FieldByName('campo')
+              .AsString + ',')
+          else
+            strComandoORD := strComando + ' order by ' + dsOrdem.FieldByName('campo').AsString;
+
+          if not isComandoOK(banco, strComandoORD) then
+            strErroOrder := strErroOrder + 'Erro no Order By ' + dsOrdem.FieldByName('campo').AsString + ';';
+
+          dsOrdem.Next;
+        end;
+
+        strErro := strErro + strErroOrder;
+
+        dsOrdem.Free;
+      end;
+      // Fim do Order By
+
+      Next;
+    end;
+
+    Free;
+  end;
+
+  if (strErro <> '') then
+    result := strErro;
+
+end;
+
+function ValorCampo_Dbx(banco: TSQLConnection; comandoSelec: string; coalesce: variant): variant;
+begin
+  result := '';
+
+  TRY
+    with CriaDS_DBX(banco, comandoSelec) do
+    begin
+      result := Fields.Fields[0].AsVariant;
+      Free;
+    end;
+  EXCEPT
+    result := coalesce;
+
+  END;
+
+  if result = null then
+    result := coalesce;
+end;
+
+function ValorCampo_DbxSnap(banco: TDSProviderConnection; comandoSelec: string; coalesce: variant; provider: string = ''): variant;
+begin
+  result := '';
+
+  TRY
+
+    with CriaCDS_dbxSnap(banco, comandoSelec,provider) do
+    begin
+      result := Fields.Fields[0].AsVariant;
+      Free;
+    end;
+  EXCEPT
+    result := coalesce;
+
+  END;
+
+  if result = null then
+    result := coalesce;
+end;
+
+function ValorCampo_Fdac(banco: TFDConnection; comandoSelec: string; coalesce: variant): variant;
+begin
+  result := '';
+  with CriaDS_Fdac(banco, comandoSelec) do
+  begin
+    result := Fields.Fields[0].AsVariant;
+    Free;
+  end;
+
+  if result = null then
+    result := coalesce;
+end;
+
+function ValorCampo(banco: TibdataBase; transa: TIBTransaction; comandoSelec: string; coalesce: variant): variant;
+begin
+  result := '';
+  with CriaDS(banco, transa, comandoSelec) do
+  begin
+    result := Fields.Fields[0].AsVariant;
+    Free;
+  end;
+
+  if result = null then
+    result := coalesce;
+end;
+
+function temIniBdRemoto: Boolean;
+begin
+  result := false;
+
+  if FileExists(ExtractFilePath(Application.ExeName) + 'bdDese.ini') then
+    result := True;
+
+end;
+
+function isInAdvNet: Boolean;
+begin
+  result := false;
+
+  if FileExists('\\SERVERLINUX\www\index.html') then
+    result := True;
+
+end;
+
+function isUsingSourceCode: Boolean;
+begin
+  result := false;
+
+  if FileExists('C:\Arquivos de programas\Borland\Delphi7\Bin\delphi32.exe') then
+    result := True;
+
+  if FileExists(ExtractFilePath(Application.ExeName) + TrocaStr(ExtractFileName(Application.ExeName), '.exe', '') +
+    '.dpr') then
+    result := True;
+
+end;
+
+end.
+

@@ -1,0 +1,95 @@
+unit aadm;
+
+interface
+
+uses
+  SysUtils, Classes, DB, SqlExpr, IBScript, LbCipher, LbClass,
+  IBSQL, IBDatabase, IBCustomDataSet, IBTable,
+  Windows, Messages, Variants, Graphics, Controls, Forms,
+  Dialogs, ImgList, Mask, ExtCtrls, DBCtrls, StdCtrls,
+  Buttons, Grids, DBGrids, ComCtrls, ToolWin, DBClient, ibQuery,
+  IBServices, inifiles, DateUtils, IBDatabaseInfo,
+  AdvIntegraBusinessLib, advArquivos, LuizBd, shellApi,
+  OverbyteIcsWndControl, OverbyteIcsHttpProt, advstrings, Data.DBXFirebird,
+  DbxDevartInterBase, DbxDevartMySql, Data.DBXDataSnap, IPPeerClient, Data.DBXCommon, Datasnap.DSConnect;
+
+type
+  Tdm = class(TDataModule)
+    cripto: TLbBlowfish;
+    dbxDb: TSQLConnection;
+    procedure DataModuleCreate(Sender: TObject);
+
+    procedure ExecScript(scrp: TIBScript);
+    procedure dbxDBBeforeConnect(Sender: TObject);
+
+  private
+
+  public
+
+  end;
+
+var
+  dm: Tdm;
+  jaSetouBD: Boolean = false; // para o before conect saber se está lá porque tinha q estar mesmo, ou foi por causa de BD gravado aberto
+  vCont: integer; // usado para contar as tentativas de conexão
+  vsenhaib: string; // usado para guardar a senha correta do interbase..
+  vtipoerro: string; // usado para guardar qual tipo de erro ocorreu com o sistema...
+
+implementation
+
+uses funcoes;
+
+{$R *.dfm}
+
+
+procedure Tdm.DataModuleCreate(Sender: TObject);
+var
+  // precisa de apenas uma variavel do tipo tinifile
+  // incluir inifiles no uses
+  inibd: TIniFile;
+
+  // Guarda alguns valores do INI para uso no DBX
+  vpHost, vpBanco, vpSenha, vpCEP: string;
+  vhostRemotoRemot, vBdremotoRemot, VsenhaRemotaRemot: string;
+  isSQLServer: Boolean;
+begin
+
+  // abre o arquivo ini
+  if not(FileExists(ExtractFilePath(Application.ExeName) + 'conf.ini')) then
+  begin
+    ShowMessage('Não foi encontrado conf.ini!');
+    exitprocess(0);
+  end;
+  LeBusinessConfIni(vpHost, vpBanco, vpSenha, isSQLServer, vpCEP);
+
+  /// /  DBX
+  jaSetouBD := true;
+  if not ConectaBancoDBX(dbxDB) then
+  begin
+    MessageDlg('Erro ao se conectar ao banco DBX !', mtError, [mbOK], 0);
+    exitprocess(0);
+  end;
+
+end;
+
+procedure Tdm.ExecScript(scrp: TIBScript);
+begin
+  scrp.Script.Text := Upper(scrp.Script.Text);
+  scrp.ExecuteScript;
+end;
+
+procedure Tdm.dbxDBBeforeConnect(Sender: TObject);
+var
+  vpHost, vpBanco, vpSenha, vpCEP: string;
+  isSQLServer: Boolean;
+begin
+  // v12.2  - inicio
+  if not jaSetouBD then
+  begin
+    LeBusinessConfIni(vpHost, vpBanco, vpSenha, isSQLServer, vpCEP);
+    setapropriedadesFireCrLabs(dm.dbxDB, vpHost, vpBanco, vpSenha);
+  end;
+  // v12.2 - fim
+end;
+
+end.

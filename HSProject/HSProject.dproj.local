@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2021/03/17 20:30:29.000.676,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/17 20:43:45.000.194,C:\Users\pleffer\Desktop\Projetos\HSProject\CadPaciente.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm</Transaction>
+    <Transaction>2021/03/17 20:43:45.000.194,C:\Users\pleffer\Desktop\Projetos\HSProject\CadPaciente.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/17 21:20:49.000.086,=C:\Users\pleffer\Desktop\Projetos\HSProject\DM\aadm.pas</Transaction>
+    <Transaction>2021/03/23 19:20:09.000.303,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/23 19:24:58.000.576,C:\Users\pleffer\Desktop\Projetos\HSProject\PacientesCadastrados.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/23 19:24:58.000.576,C:\Users\pleffer\Desktop\Projetos\HSProject\PacientesCadastrados.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm</Transaction>
+    <Transaction>2021/03/23 19:47:56.000.511,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/23 19:58:54.000.386,C:\Users\pleffer\Desktop\Projetos\HSProject\PacCadastrado.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/23 19:58:54.000.386,C:\Users\pleffer\Desktop\Projetos\HSProject\PacCadastrado.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm</Transaction>
+    <Transaction>2021/03/25 13:20:31.000.143,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/25 13:26:48.000.021,C:\Users\pleffer\Desktop\Projetos\HSProject\PacCad.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/25 13:26:48.000.021,C:\Users\pleffer\Desktop\Projetos\HSProject\PacCad.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm</Transaction>
+    <Transaction>2021/03/26 19:36:34.000.585,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/03/26 19:47:42.000.194,C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\NovoUsuario.dfm</Transaction>
+    <Transaction>2021/03/26 19:47:42.000.194,C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\NovoUsuario.pas</Transaction>
+    <Transaction>2021/03/26 20:10:34.000.162,C:\Users\pleffer\Desktop\Projetos\HSProject\NovoUsuario.pas=</Transaction>
+    <Transaction>2021/03/26 20:12:38.000.547,=C:\Users\pleffer\Desktop\Projetos\HSProject\NovoUsuario.pas</Transaction>
+    <Transaction>2021/04/01 18:17:10.000.914,=C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas</Transaction>
+    <Transaction>2021/04/01 18:18:33.000.135,C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.dfm=C:\Users\pleffer\Desktop\Projetos\HSProject\Fichas.dfm</Transaction>
+    <Transaction>2021/04/01 18:18:33.000.135,C:\Users\pleffer\Desktop\Projetos\HSProject\Unit1.pas=C:\Users\pleffer\Desktop\Projetos\HSProject\Fichas.pas</Transaction>
+    <Transaction>2021/04/01 20:10:48.000.727,=C:\Users\pleffer\Desktop\Projetos\HSProject\AlterarCadastrado.pas</Transaction>
+    <Transaction>2021/04/23 15:37:32.114,=C:\Users\pleffer\Desktop\Projetos\HSProject\DM\LuizBd.pas</Transaction>
+    <Transaction>2021/04/23 15:44:07.812,C:\Users\pleffer\Desktop\Projetos\HSProject\DM\LuizBd.pas=</Transaction>
+  </Transactions>
+</BorlandProject>
